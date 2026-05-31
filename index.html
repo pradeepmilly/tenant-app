@@ -977,19 +977,21 @@ async function saveTenant(){
   await _doSaveTenant(flatId, name);
 }
 
+function _fv(id,fallback=''){const el=document.getElementById(id);return el?el.value:fallback;}
+
 async function _doSaveTenant(flatId, name){
   const data={
     flatId,name,
-    phone:document.getElementById('tf-phone').value.trim(),
-    email:document.getElementById('tf-email').value.trim(),
-    persons:parseInt(document.getElementById('tf-persons').value)||0,
-    rent:parseFloat(document.getElementById('tf-rent').value)||0,
-    deposit:parseFloat(document.getElementById('tf-deposit').value)||0,
-    moveIn:document.getElementById('tf-movein').value,
-    agreementDur:document.getElementById('tf-dur').value,
-    agreementEnd:document.getElementById('tf-end').value,
-    noticePeriod:document.getElementById('tf-notice').value,
-    remarks:document.getElementById('tf-remarks').value.trim(),
+    phone:_fv('tf-phone').trim(),
+    email:_fv('tf-email').trim(),
+    persons:parseInt(_fv('tf-persons'))||0,
+    rent:parseFloat(_fv('tf-rent'))||0,
+    deposit:parseFloat(_fv('tf-deposit'))||0,
+    moveIn:_fv('tf-movein'),
+    agreementDur:_fv('tf-dur'),
+    agreementEnd:_fv('tf-end'),
+    noticePeriod:_fv('tf-notice'),
+    remarks:_fv('tf-remarks').trim(),
     updatedAt:new Date().toISOString()
   };
   if(editId){
@@ -1668,7 +1670,21 @@ async function exportExcel(){
   const ws1=XLSX.utils.json_to_sheet(flats.map(f=>({'Block':f.block,'Flat No.':f.flatNo,'Floor':f.floor,'Bedrooms':f.bedrooms,'Furnishing':f.furnishing,'Parking':f.parking,'Balcony':f.balcony,'Rent (₹)':f.rent,'Maintenance (₹)':f.maintenance,'Status':f.status,'Notes':f.notes||''})));
   XLSX.utils.book_append_sheet(wb,ws1,'Building_DB');
 
-  const ws2=XLSX.utils.json_to_sheet(tenants.map(t=>{const fl=allFlats.find(f=>f.id===t.flatId);return{'Block':fl?.block||'','Flat':fl?.flatNo||'','Name':t.name,'Phone':t.phone||'','Email':t.email||'','Persons':t.persons||0,'Rent (₹)':t.rent,'Deposit (₹)':t.deposit||0,'Move-In':t.moveIn||'','Agreement End':t.agreementEnd||'','Notice Period':t.noticePeriod||'','Remarks':t.remarks||''}}));
+  const ws2=XLSX.utils.json_to_sheet(tenants.map(t=>{const fl=allFlats.find(f=>f.id===t.flatId);return{
+    'Block':fl?.block||'',
+    'Flat':fl?.flatNo||'',
+    'Name':t.name||'',
+    'Phone':t.phone||'',
+    'Email':t.email||'',
+    'Persons':t.persons||0,
+    'Rent (₹)':t.rent||0,
+    'Deposit (₹)':t.deposit||0,
+    'Move-In':t.moveIn||'',
+    'Agreement Duration':t.agreementDur||'',
+    'Agreement End':t.agreementEnd||'',
+    'Notice Period':t.noticePeriod||'',
+    'Remarks':t.remarks!=null?String(t.remarks):'',
+  }}));
   XLSX.utils.book_append_sheet(wb,ws2,'Tenant_DB');
 
   const ws3=XLSX.utils.json_to_sheet(bills.map(b=>{const fl=allFlats.find(f=>f.id===b.flatId);const ten=allTenants.find(t=>t.flatId===b.flatId);return{'Month':b.month,'Block':fl?.block||'','Flat':fl?.flatNo||'','Tenant':ten?.name||'','Rent Due':b.rentDue,'Rent Paid':b.rentPaid,'Rent Status':b.rentStatus,'Water Units':b.waterUnits,'Water Rate':b.waterRate,'Water Amt':b.waterAmount,'Elec Units':b.elecUnits,'Elec Amt':b.elecAmount,'Elec Status':b.elecStatus,'Total':b.total,'Account':b.account||'','Date':b.paidDate||'','Notes':b.notes||''}}));
