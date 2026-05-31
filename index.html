@@ -1184,32 +1184,65 @@ async function quickPaid(flatId,rent,mk,existId){
   toast('✅ Marked as Paid');renderBilling();renderDash();
 }
 
+// Rebuilds the flat dropdown based on selected building filter in the billing form
+async function refreshBillFlatOpts(selectedFlatId){
+  const allFlats=await ga('flats');
+  const filterBldg=document.getElementById('bf-bldg-filter')?.value||'';
+  const occFlats=allFlats.filter(fl=>{
+    if(fl.status!=='Occupied') return false;
+    if(filterBldg&&fl.block!==filterBldg) return false;
+    return true;
+  }).sort((a,b)=>a.block.localeCompare(b.block)||a.flatNo.localeCompare(b.flatNo));
+
+  const flatSel=document.getElementById('bf-flat');
+  if(!flatSel) return;
+  const curVal=flatSel.value; // preserve current selection if still valid
+  flatSel.innerHTML=`<option value="">Select flat…</option>`+
+    occFlats.map(fl=>`<option value="${fl.id}" ${(fl.id===(selectedFlatId||parseInt(curVal)))?'selected':''}>${esc(fl.block)} — ${esc(fl.flatNo)}</option>`).join('');
+  checkBillDuplicate();
+}
+
 async function openBillForm(flatId,billData){
   const allFlats=await ga('flats');
   const f=billData||{};
   const mk=monthKey();
   const accts=(await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque')).split(',');
-  // Show building's occupied flats first when filtered
-  const occFlats=allFlats.filter(fl=>fl.status==='Occupied').sort((a,b)=>{
-    const aMatch=activeBuilding==='All'||a.block===activeBuilding?0:1;
-    const bMatch=activeBuilding==='All'||b.block===activeBuilding?0:1;
-    return aMatch-bMatch;
-  });
-  const flatOpts=occFlats.map(fl=>`<option value="${fl.id}" ${(f.flatId===fl.id||flatId===fl.id)?'selected':''}>${esc(fl.block)} — ${esc(fl.flatNo)}</option>`).join('');
+
+  // Get unique building list from occupied flats
+  const occFlats=allFlats.filter(fl=>fl.status==='Occupied');
+  const buildings=[...new Set(occFlats.map(fl=>fl.block))].sort();
+
+  // Determine pre-selected building from context
+  const preFlat=flatId?allFlats.find(fl=>fl.id===flatId):null;
+  const preBldg=f.flatId?allFlats.find(fl=>fl.id===f.flatId)?.block:preFlat?.block||activeBuilding!=='All'?activeBuilding:'';
+
+  const bldgOpts=`<option value="">All Buildings</option>`+
+    buildings.map(b=>`<option value="${esc(b)}" ${b===preBldg?'selected':''}>${esc(b)}</option>`).join('');
+
+  // Initial flat list filtered by pre-selected building
+  const filteredFlats=occFlats.filter(fl=>!preBldg||fl.block===preBldg)
+    .sort((a,b)=>a.block.localeCompare(b.block)||a.flatNo.localeCompare(b.flatNo));
+  const flatOpts=filteredFlats.map(fl=>`<option value="${fl.id}" ${(f.flatId===fl.id||flatId===fl.id)?'selected':''}>${esc(fl.block)} — ${esc(fl.flatNo)}</option>`).join('');
   const acctOpts=accts.map(a=>`<option ${f.account===a.trim()?'selected':''}>${esc(a.trim())}</option>`).join('');
 
   openModal(editId?'Edit Billing Entry':'Add Billing Entry',`
-    <div class="fg"><label class="fl">Flat *</label>
-      <select class="fc" id="bf-flat" onchange="onBillFlatSelect(this)">
-        <option value="">Select flat…</option>${flatOpts}
-      </select></div>
+    <div class="frow" style="margin-bottom:2px">
+      <div class="fg"><label class="fl">🏗 Filter by Building</label>
+        <select class="fc" id="bf-bldg-filter" onchange="refreshBillFlatOpts(${flatId||'null'})">
+          ${bldgOpts}
+        </select></div>
+      <div class="fg"><label class="fl">Flat *</label>
+        <select class="fc" id="bf-flat" onchange="onBillFlatSelect(this)">
+          <option value="">Select flat…</option>${flatOpts}
+        </select></div>
+    </div>
+    <div id="bill-warn"></div>
     <div class="frow">
       <div class="fg"><label class="fl">Month *</label>
         <input class="fc" id="bf-month" type="month" value="${f.month||mk}" oninput="checkBillDuplicate()"></div>
       <div class="fg"><label class="fl">Account / Bank</label>
         <select class="fc" id="bf-acct">${acctOpts}</select></div>
     </div>
-    <div id="bill-warn"></div>
     <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:var(--amber);text-transform:uppercase;letter-spacing:.5px">— Rent —</div>
     <div class="frow">
       <div class="fg"><label class="fl">Rent Due (₹)</label>
@@ -1436,29 +1469,23 @@ async function doOverdueWA(){
   const tenants=await ga('tenants');
   const cc=await getSetting('countryCode','91');
   const society=await getSetting('society','Society Management');
-
-  // Scope to building
-  const bills=allBills.filter(b=>flatIds.has(b.flatId));
-  const overdue=bills.filter(b=>['Pending','Overdue'].includes(b.rentStatus));
   const scopeNote=activeBuilding!=='All'?` in ${activeBuilding}`:'';
 
+  const bills=allBills.filter(b=>flatIds.has(b.flatId));
+  const overdue=bills.filter(b=>['Pending','Overdue'].includes(b.rentStatus));
   if(overdue.length===0){toast(`✅ No overdue / pending rents${scopeNote}`);return}
 
-  showConfirm(`Send ${overdue.length} WA Alerts`,
-    `Open WhatsApp for ${overdue.length} overdue tenant(s)${scopeNote}?\n\nEnsure WhatsApp is installed.`,
-    ()=>{
-      let noPh=[];
-      for(const b of overdue){
-        const fl=allFlats.find(f=>f.id===b.flatId);
-        const ten=tenants.find(t=>t.flatId===b.flatId);
-        if(!ten?.phone){noPh.push(fl?.flatNo||'?');continue}
-        const ph=cleanPhone(ten.phone,cc);
-        const msg=`Dear ${ten.name},\n\nThis is a payment reminder from ${society}.\n────────────────────\nFlat    : *${fl?fl.block+' — '+fl.flatNo:''}*\nMonth  : *${b.month}*\nStatus : *${b.rentStatus}*\nDue    : *₹${b.total.toLocaleString('en-IN')}*\n────────────────────\nPlease pay at the earliest.\n\nThank you,\n${society}`;
-        window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`,'_blank');
-      }
-      if(noPh.length) toast(`⚠️ No phone for: ${noPh.join(', ')}`);
-      else toast('📲 WhatsApp opened!');
-    },'Send Alerts','📲');
+  const queue=[];
+  const noPh=[];
+  for(const b of overdue){
+    const fl=allFlats.find(f=>f.id===b.flatId);
+    const ten=tenants.find(t=>t.flatId===b.flatId);
+    if(!ten?.phone){noPh.push(`${fl?.block}-${fl?.flatNo||'?'}`);continue}
+    const ph=cleanPhone(ten.phone,cc);
+    const msg=`Dear ${ten.name},\n\nThis is a payment reminder from ${society}.\n────────────────────\nFlat    : *${fl?fl.block+' — '+fl.flatNo:''}*\nMonth  : *${b.month}*\nStatus : *${b.rentStatus}*\nDue    : *₹${b.total.toLocaleString('en-IN')}*\n────────────────────\nPlease pay at the earliest.\n\nThank you,\n${society}`;
+    queue.push({name:ten.name,flat:fl?fl.block+' — '+fl.flatNo:'',phone:ten.phone,month:b.month,status:b.rentStatus,url:`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`});
+  }
+  openWAQueue(queue,noPh,'💬 Overdue Rent Alerts');
 }
 
 async function doExpiryWA(){
@@ -1469,35 +1496,129 @@ async function doExpiryWA(){
   const society=await getSetting('society','Society Management');
   const thresh=parseInt(await getSetting('expiryDays','60'));
   const today=new Date();today.setHours(0,0,0,0);
+  const scopeNote=activeBuilding!=='All'?` in ${activeBuilding}`:'';
 
-  // Scope to building
   const tenants=allTenants.filter(t=>flatIds.has(t.flatId));
   const alerts=tenants.filter(t=>{
     if(!t.agreementEnd) return false;
-    const end=new Date(t.agreementEnd);
-    return (end-today)/86400000<=thresh;
+    return (new Date(t.agreementEnd)-today)/86400000<=thresh;
   });
-  const scopeNote=activeBuilding!=='All'?` in ${activeBuilding}`:'';
-
   if(alerts.length===0){toast(`✅ All agreements valid beyond ${thresh} days${scopeNote}`);return}
-  showConfirm(`Send ${alerts.length} Renewal Alerts`,
-    `Send agreement renewal WA messages to ${alerts.length} tenant(s)${scopeNote}?`,
-    ()=>{
-      let noPh=[];
-      for(const t of alerts){
-        if(!t.phone){noPh.push(t.name);continue}
-        const fl=allFlats.find(f=>f.id===t.flatId);
-        const end=new Date(t.agreementEnd);
-        const days=Math.ceil((end-today)/86400000);
-        const ph=cleanPhone(t.phone,cc);
-        const msg=days<0?
-          `Dear ${t.name},\n\n⚠ *URGENT: Agreement Expired*\n────────────────────\nFlat         : *${fl?fl.block+' — '+fl.flatNo:''}*\nExpired On : *${t.agreementEnd}*\nDays Overdue: *${Math.abs(days)} days*\nRent         : *₹${(parseFloat(t.rent)||0).toLocaleString('en-IN')}*\n────────────────────\nPlease contact us immediately.\n\n${society}`:
-          `Dear ${t.name},\n\n📋 *Agreement Renewal Reminder*\n────────────────────\nFlat       : *${fl?fl.block+' — '+fl.flatNo:''}*\nEnds On  : *${t.agreementEnd}*\nDays Left : *${days} days*\nRent       : *₹${(parseFloat(t.rent)||0).toLocaleString('en-IN')}*\n────────────────────\nPlease contact us to discuss renewal.\n\n${society}`;
-        window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`,'_blank');
+
+  const queue=[];
+  const noPh=[];
+  for(const t of alerts){
+    if(!t.phone){noPh.push(t.name);continue}
+    const fl=allFlats.find(f=>f.id===t.flatId);
+    const end=new Date(t.agreementEnd);
+    const days=Math.ceil((end-today)/86400000);
+    const ph=cleanPhone(t.phone,cc);
+    const msg=days<0?
+      `Dear ${t.name},\n\n⚠ *URGENT: Agreement Expired*\n────────────────────\nFlat         : *${fl?fl.block+' — '+fl.flatNo:''}*\nExpired On : *${t.agreementEnd}*\nDays Overdue: *${Math.abs(days)} days*\nRent         : *₹${(parseFloat(t.rent)||0).toLocaleString('en-IN')}*\n────────────────────\nPlease contact us immediately.\n\n${society}`:
+      `Dear ${t.name},\n\n📋 *Agreement Renewal Reminder*\n────────────────────\nFlat       : *${fl?fl.block+' — '+fl.flatNo:''}*\nEnds On  : *${t.agreementEnd}*\nDays Left : *${days} days*\nRent       : *₹${(parseFloat(t.rent)||0).toLocaleString('en-IN')}*\n────────────────────\nPlease contact us to discuss renewal.\n\n${society}`;
+    queue.push({name:t.name,flat:fl?fl.block+' — '+fl.flatNo:'',phone:t.phone,extra:days<0?'❌ Expired':'⏰ '+days+'d left',url:`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`});
+  }
+  openWAQueue(queue,noPh,'📋 Renewal Alerts');
+}
+
+// ── Sequential WhatsApp sender ──────────────────────────────────────────────
+// Opens a modal with all recipients listed. Each one has its own "Open WhatsApp"
+// button, triggered by a real user tap — bypassing browser popup blockers.
+function openWAQueue(queue, noPh, title){
+  if(queue.length===0&&noPh.length===0){toast('✅ Nothing to send');return}
+
+  function renderQueue(sent){
+    const rows=queue.map((q,i)=>{
+      const done=sent.has(i);
+      return`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(q.name)}</div>
+          <div style="font-size:11px;color:var(--gray-500)">${esc(q.flat)} ${q.month?'· '+q.month:''} ${q.extra?'· '+q.extra:''}</div>
+          <div style="font-size:11px;color:var(--gray-400)">📞 ${esc(q.phone)}</div>
+        </div>
+        ${done
+          ?`<span class="badge bg-green">✓ Sent</span>`
+          :`<button class="btn btn-sm btn-green" onclick="sendWAItem(${i})" style="white-space:nowrap;flex-shrink:0">📲 Send</button>`
+        }
+      </div>`;
+    }).join('');
+
+    const nophRows=noPh.length?`<div style="background:var(--amber-lt);border-radius:8px;padding:9px 12px;margin-top:10px;font-size:12px;color:var(--amber);font-weight:700">
+      ⚠️ No phone number for: ${noPh.map(n=>esc(n)).join(', ')}
+    </div>`:'';
+
+    const sentCount=sent.size;
+    const allDone=sentCount===queue.length;
+
+    return`<div style="background:var(--blue-lt);border-radius:9px;padding:10px 13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:13px;font-weight:800;color:var(--blue)">${sentCount} / ${queue.length} sent</div>
+        ${!allDone?`<button class="btn btn-sm btn-primary" onclick="sendAllWARemaining()">📲 Send All One by One</button>`:`<span class="badge bg-green">✅ All done!</span>`}
+      </div>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:10px">Tap <b>Send</b> for each recipient — browser opens WhatsApp for them individually.</div>
+      ${rows}${nophRows}
+      ${allDone?`<button class="btn btn-primary btn-full" style="margin-top:14px" onclick="closeModal()">✅ Done</button>`:''}`;
+  }
+
+  // Store queue in window scope for button callbacks
+  window._waQueue=queue;
+  window._waSent=new Set();
+  window._waTitle=title;
+
+  openModal(title, renderQueue(window._waSent));
+}
+
+function sendWAItem(i){
+  const q=window._waQueue[i];
+  if(!q) return;
+  window.open(q.url,'_blank');
+  window._waSent.add(i);
+  // Re-render the modal body in place without closing it
+  document.getElementById('mbody').innerHTML=renderWAQueueBody();
+}
+
+function renderWAQueueBody(){
+  const queue=window._waQueue||[];
+  const sent=window._waSent||new Set();
+  const rows=queue.map((q,i)=>{
+    const done=sent.has(i);
+    return`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(q.name)}</div>
+        <div style="font-size:11px;color:var(--gray-500)">${esc(q.flat)} ${q.month?'· '+q.month:''} ${q.extra?'· '+q.extra:''}</div>
+        <div style="font-size:11px;color:var(--gray-400)">📞 ${esc(q.phone)}</div>
+      </div>
+      ${done
+        ?`<span class="badge bg-green">✓ Sent</span>`
+        :`<button class="btn btn-sm btn-green" onclick="sendWAItem(${i})" style="white-space:nowrap;flex-shrink:0">📲 Send</button>`
       }
-      if(noPh.length) toast(`⚠️ No phone for: ${noPh.join(', ')}`);
-      else toast('📲 WhatsApp opened!');
-    },'Send Alerts','📋');
+    </div>`;
+  }).join('');
+  const sentCount=sent.size;
+  const allDone=sentCount===queue.length;
+  return`<div style="background:var(--blue-lt);border-radius:9px;padding:10px 13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:13px;font-weight:800;color:var(--blue)">${sentCount} / ${queue.length} sent</div>
+      ${!allDone?`<button class="btn btn-sm btn-primary" onclick="sendAllWARemaining()">📲 Send All One by One</button>`:`<span class="badge bg-green">✅ All done!</span>`}
+    </div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:10px">Tap <b>Send</b> for each recipient — browser opens WhatsApp for them individually.</div>
+    ${rows}
+    ${allDone?`<button class="btn btn-primary btn-full" style="margin-top:14px" onclick="closeModal()">✅ Done</button>`:''}`;
+}
+
+// "Send All" uses a small delay between each open so the browser treats each as a new user-initiated action
+let _waSendTimer=null;
+function sendAllWARemaining(){
+  const queue=window._waQueue||[];
+  const sent=window._waSent||new Set();
+  const remaining=queue.map((_,i)=>i).filter(i=>!sent.has(i));
+  if(remaining.length===0) return;
+  let idx=0;
+  function sendNext(){
+    if(idx>=remaining.length) return;
+    sendWAItem(remaining[idx]);
+    idx++;
+    if(idx<remaining.length) _waSendTimer=setTimeout(sendNext,1200);
+  }
+  sendNext();
 }
 
 function cleanPhone(p,cc){
