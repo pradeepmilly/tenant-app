@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1a3a5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TMS">
+<title>Tenant Management System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --primary:#1a3a5c;--primary-lt:#e8f0fb;--blue:#1f4e79;--blue-lt:#dbeafe;
+  --green:#1e6b3c;--green-lt:#dcfce7;--amber:#92400e;--amber-lt:#fef3c7;
+  --red:#b91c1c;--red-lt:#fee2e2;--purple:#5b2c8d;--purple-lt:#f3e8ff;
+  --teal:#0d6b72;--teal-lt:#ccfbf1;--gray-50:#f9fafb;--gray-100:#f3f4f6;
+  --gray-200:#e5e7eb;--gray-300:#d1d5db;--gray-400:#9ca3af;--gray-500:#6b7280;
+  --gray-600:#4b5563;--gray-700:#374151;--gray-800:#1f2937;--gray-900:#111827;
+  --r:12px;--sh:0 1px 3px rgba(0,0,0,.12);--sh2:0 4px 12px rgba(0,0,0,.1);
+}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray-50);color:var(--gray-900)}
+body{display:flex;flex-direction:column;overflow:hidden}
+
+/* Header */
+#hdr{background:var(--primary);color:white;padding:max(14px,env(safe-area-inset-top)) 16px 12px;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;box-shadow:var(--sh2)}
+#hdr h1{font-size:17px;font-weight:800;letter-spacing:-.3px}
+#hdr .sub{font-size:10px;opacity:.7;margin-top:1px}
+.hbtn{background:rgba(255,255,255,.15);border:none;color:white;width:34px;height:34px;
+  border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px}
+.hbtn:active{background:rgba(255,255,255,.3)}
+.hbtns{display:flex;gap:6px}
+
+/* Content */
+#main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:76px}
+
+/* Bottom nav */
+#bnav{position:fixed;bottom:0;left:0;right:0;background:white;border-top:1px solid var(--gray-200);
+  display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:100;
+  box-shadow:0 -2px 10px rgba(0,0,0,.08)}
+.ni{flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 4px 5px;
+  cursor:pointer;color:var(--gray-400);border:none;background:none;font-family:inherit;position:relative}
+.ni.active{color:var(--blue)}
+.ni .ico{font-size:21px;line-height:1}
+.ni .lbl{font-size:10px;font-weight:600;margin-top:2px;text-transform:uppercase;letter-spacing:.3px}
+.nbadge{position:absolute;top:4px;right:calc(50% - 14px);background:var(--red);color:white;
+  border-radius:10px;font-size:9px;font-weight:700;padding:1px 4px;min-width:16px;text-align:center;display:none}
+
+/* Pages */
+.pg{display:none;padding:14px}
+.pg.active{display:block}
+
+/* Cards */
+.card{background:white;border-radius:var(--r);box-shadow:var(--sh);margin-bottom:10px;overflow:hidden}
+.cb{padding:13px 15px}
+.crow{display:flex;align-items:center;gap:11px}
+.cavatar{width:42px;height:42px;border-radius:50%;background:var(--blue);color:white;
+  display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;flex-shrink:0}
+.cinfo{flex:1;min-width:0}
+.cname{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.csub{font-size:12px;color:var(--gray-500);margin-top:1px}
+.cright{text-align:right;flex-shrink:0}
+.camt{font-size:14px;font-weight:800;color:var(--blue)}
+.cact{border-top:1px solid var(--gray-100);padding:7px 12px;display:flex;gap:7px;flex-wrap:wrap}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.1px}
+.bg-green{background:var(--green-lt);color:#15803d}
+.bg-red{background:var(--red-lt);color:var(--red)}
+.bg-yellow{background:var(--amber-lt);color:var(--amber)}
+.bg-blue{background:var(--blue-lt);color:var(--blue)}
+.bg-gray{background:var(--gray-100);color:var(--gray-600)}
+.bg-purple{background:var(--purple-lt);color:var(--purple)}
+.bg-teal{background:var(--teal-lt);color:var(--teal)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  padding:9px 16px;border-radius:9px;border:none;font-size:13px;font-weight:700;
+  cursor:pointer;transition:all .15s;font-family:inherit}
+.btn:active{transform:scale(.96)}
+.btn-primary{background:var(--blue);color:white}
+.btn-green{background:var(--green);color:white}
+.btn-red{background:var(--red);color:white}
+.btn-amber{background:#d97706;color:white}
+.btn-teal{background:var(--teal);color:white}
+.btn-purple{background:var(--purple);color:white}
+.btn-outline{background:white;color:var(--blue);border:1.5px solid var(--blue)}
+.btn-ghost{background:var(--gray-100);color:var(--gray-700)}
+.btn-sm{padding:5px 11px;font-size:12px;border-radius:7px}
+.btn-full{width:100%}
+
+/* FAB */
+#fab{position:fixed;bottom:78px;right:18px;width:54px;height:54px;border-radius:50%;
+  background:var(--blue);color:white;border:none;font-size:26px;cursor:pointer;
+  box-shadow:0 4px 14px rgba(31,78,121,.45);display:flex;align-items:center;justify-content:center;
+  z-index:90;transition:all .15s}
+#fab:active{transform:scale(.92)}
+
+/* Section header */
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;margin-top:2px}
+.st{font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.6px}
+
+/* Summary */
+.srow{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px}
+.scard{background:white;border-radius:var(--r);padding:11px;text-align:center;box-shadow:var(--sh);cursor:pointer}
+.snum{font-size:21px;font-weight:900}
+.slbl{font-size:10px;color:var(--gray-500);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+
+/* Banner */
+.banner{border-radius:var(--r);padding:18px;color:white;margin-bottom:14px}
+.banner h2{font-size:18px;font-weight:900}
+.banner p{font-size:12px;opacity:.8;margin-top:3px}
+.banner .big{font-size:26px;font-weight:900;margin-top:6px}
+.banner .sm{font-size:11px;opacity:.7}
+.pbar{background:rgba(255,255,255,.25);border-radius:4px;height:5px;overflow:hidden;margin-top:10px}
+.pfill{height:100%;border-radius:4px;background:white}
+
+/* Month nav */
+.mnav{display:flex;align-items:center;justify-content:space-between;background:white;
+  border-radius:var(--r);padding:11px 14px;margin-bottom:12px;box-shadow:var(--sh)}
+.mnav button{background:none;border:none;font-size:22px;cursor:pointer;color:var(--blue);padding:2px 8px}
+.mlbl{font-size:15px;font-weight:800}
+
+/* Search */
+.srch{position:relative;margin-bottom:12px}
+.srch-ico{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--gray-400)}
+.srch input{width:100%;padding:9px 11px 9px 33px;border:1.5px solid var(--gray-200);border-radius:9px;
+  font-size:14px;font-family:inherit;background:white}
+.srch input:focus{outline:none;border-color:var(--blue)}
+
+/* Modal */
+.mov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;
+  display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .2s}
+.mov.open{opacity:1;pointer-events:all}
+.msh{background:white;border-radius:18px 18px 0 0;width:100%;max-height:94vh;overflow-y:auto;
+  transform:translateY(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);
+  padding-bottom:env(safe-area-inset-bottom)}
+.mov.open .msh{transform:translateY(0)}
+.mhandle{width:38px;height:4px;background:var(--gray-200);border-radius:2px;margin:10px auto 0}
+.mhdr{padding:14px 18px 11px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--gray-100)}
+.mtitle{font-size:16px;font-weight:800}
+.mclose{background:var(--gray-100);border:none;width:28px;height:28px;border-radius:50%;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.mbody{padding:14px 18px 18px}
+
+/* Form */
+.fg{margin-bottom:13px}
+.fl{font-size:11px;font-weight:700;color:var(--gray-600);margin-bottom:4px;display:block;letter-spacing:.2px}
+.fc{width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:9px;
+  font-size:14px;font-family:inherit;color:var(--gray-900);background:white;-webkit-appearance:none}
+.fc:focus{outline:none;border-color:var(--blue)}
+select.fc{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 11px center;padding-right:32px}
+textarea.fc{resize:vertical;min-height:72px}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.frow3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.radio-row{display:flex;gap:16px;padding:6px 0}
+.radio-row label{display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer}
+
+/* Filter chips */
+.chips{display:flex;gap:7px;margin-bottom:12px;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{padding:5px 13px;border-radius:20px;border:1.5px solid var(--gray-200);font-size:12px;
+  font-weight:700;cursor:pointer;background:white;white-space:nowrap;font-family:inherit}
+.chip.active{background:var(--blue);color:white;border-color:var(--blue)}
+
+/* Confirm */
+#cdialog{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;
+  display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity .2s}
+#cdialog.open{opacity:1;pointer-events:all}
+.cbox{background:white;border-radius:16px;padding:22px;width:100%;max-width:300px;text-align:center}
+.cico{font-size:34px;margin-bottom:10px}
+.ctitle{font-size:16px;font-weight:800;margin-bottom:5px}
+.cmsg{font-size:13px;color:var(--gray-500);margin-bottom:18px}
+.cbtns{display:flex;gap:9px}
+
+/* Toast */
+#toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--gray-900);color:white;padding:9px 18px;border-radius:22px;
+  font-size:13px;font-weight:600;z-index:400;opacity:0;transition:all .25s;
+  white-space:nowrap;max-width:calc(100vw - 32px)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Empty state */
+.empty{text-align:center;padding:44px 20px;color:var(--gray-400)}
+.eico{font-size:44px;margin-bottom:10px}
+.etitle{font-size:15px;font-weight:700;color:var(--gray-500);margin-bottom:5px}
+.esub{font-size:12px}
+
+/* More page */
+.more-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mcard{background:white;border-radius:var(--r);box-shadow:var(--sh);padding:16px;
+  cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.mcard:active{transform:scale(.97)}
+.mcard .mico{font-size:28px}
+.mcard .mtxt{font-size:13px;font-weight:800;color:var(--gray-800)}
+.mcard .msub{font-size:11px;color:var(--gray-500)}
+
+/* Report table */
+.rtable{overflow-x:auto;margin-top:12px}
+.rtable table{border-collapse:collapse;font-size:12px;min-width:100%}
+.rtable th{background:var(--gray-100);padding:7px 10px;text-align:left;font-weight:700;
+  font-size:11px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;
+  border-bottom:2px solid var(--gray-200)}
+.rtable td{padding:7px 10px;border-bottom:1px solid var(--gray-100);white-space:nowrap}
+.rtable tr:last-child td{border-bottom:none}
+.rtable .total-row{background:var(--gray-50);font-weight:700}
+
+/* Settings */
+.setting-item{background:white;border-radius:var(--r);padding:14px 15px;margin-bottom:10px;box-shadow:var(--sh)}
+.setting-label{font-size:12px;font-weight:700;color:var(--gray-600);margin-bottom:6px;display:block}
+
+/* Billing card */
+.bill-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 14px}
+.bill-sub{font-size:10px;color:var(--gray-400);margin-top:2px}
+.util-row{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px}
+
+/* Progress */
+.pbar2{background:var(--gray-100);border-radius:4px;height:5px;overflow:hidden;margin-top:5px}
+.pfill2{height:100%;border-radius:4px;background:var(--blue)}
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <div>
+    <h1>🏢 Tenant Management System</h1>
+    <div class="sub" id="hdr-sub">Loading…</div>
+  </div>
+  <div class="hbtns">
+    <button class="hbtn" onclick="exportExcel()" title="Export Excel">📊</button>
+  </div>
+</div>
+
+<div id="main">
+  <div class="pg active" id="pg-dash"><div id="dash-content"></div></div>
+  <div class="pg" id="pg-flats">
+    <div class="srch"><span class="srch-ico">🔍</span><input placeholder="Search by flat, block, floor…" oninput="renderFlats(this.value)" id="flat-srch"></div>
+    <div class="chips" id="flat-chips">
+      <button class="chip active" onclick="setFlatFilter('All','flat-chips',this);renderFlats()">All</button>
+      <button class="chip" onclick="setFlatFilter('Occupied','flat-chips',this);renderFlats()">🟢 Occupied</button>
+      <button class="chip" onclick="setFlatFilter('Vacant','flat-chips',this);renderFlats()">🔴 Vacant</button>
+    </div>
+    <div id="flats-list"></div>
+  </div>
+  <div class="pg" id="pg-tenants">
+    <div class="srch"><span class="srch-ico">🔍</span><input placeholder="Search tenants…" oninput="renderTenants(this.value)" id="ten-srch"></div>
+    <div id="tenants-list"></div>
+  </div>
+  <div class="pg" id="pg-billing">
+    <div class="mnav">
+      <button onclick="chMonth(-1)">‹</button>
+      <span class="mlbl" id="mlbl"></span>
+      <button onclick="chMonth(1)">›</button>
+    </div>
+    <div id="bill-summary"></div>
+    <div id="bill-list"></div>
+  </div>
+  <div class="pg" id="pg-more">
+    <div class="sh"><span class="st">Actions</span></div>
+    <div class="more-grid" id="more-actions">
+      <div class="mcard" onclick="doMarkPaid()"><div class="mico">✅</div><div class="mtxt">Mark as Paid</div><div class="msub">Update rent status</div></div>
+      <div class="mcard" onclick="doAddNextMonth()"><div class="mico">📅</div><div class="mtxt">Add Next Month</div><div class="msub">Create billing rows</div></div>
+      <div class="mcard" onclick="doOverdueWA()"><div class="mico">💬</div><div class="mtxt">Overdue Alerts</div><div class="msub">WhatsApp reminders</div></div>
+      <div class="mcard" onclick="doExpiryWA()"><div class="mico">📋</div><div class="mtxt">Renewal Alerts</div><div class="msub">Agreement expiry WA</div></div>
+    </div>
+    <div class="sh" style="margin-top:16px"><span class="st">Reports</span></div>
+    <div class="more-grid">
+      <div class="mcard" onclick="showReport('monthly')"><div class="mico">📊</div><div class="mtxt">Monthly Collection</div><div class="msub">Flat-wise for a month</div></div>
+      <div class="mcard" onclick="showReport('outstanding')"><div class="mico">⚠️</div><div class="mtxt">Outstanding</div><div class="msub">Flat-wise dues</div></div>
+      <div class="mcard" onclick="showReport('allmonths')"><div class="mico">📈</div><div class="mtxt">All Months</div><div class="msub">Month-by-month summary</div></div>
+      <div class="mcard" onclick="showReport('accounts')"><div class="mico">🏦</div><div class="mtxt">Account-wise</div><div class="msub">Collection by bank</div></div>
+    </div>
+    <div class="sh" style="margin-top:16px"><span class="st">Settings & Data</span></div>
+    <div class="more-grid">
+      <div class="mcard" onclick="openSettings()"><div class="mico">⚙️</div><div class="mtxt">Settings</div><div class="msub">Society, WA, accounts</div></div>
+      <div class="mcard" onclick="exportExcel()"><div class="mico">📊</div><div class="mtxt">Export Excel</div><div class="msub">Download all data</div></div>
+    </div>
+  </div>
+</div>
+
+<nav id="bnav">
+  <button class="ni active" onclick="gotoTab('dash')" id="ni-dash"><span class="ico">🏠</span><span class="lbl">Home</span></button>
+  <button class="ni" onclick="gotoTab('flats')" id="ni-flats"><span class="ico">🏗</span><span class="lbl">Buildings</span></button>
+  <button class="ni" onclick="gotoTab('tenants')" id="ni-tenants"><span class="ico">👤</span><span class="lbl">Tenants</span></button>
+  <button class="ni" onclick="gotoTab('billing')" id="ni-billing"><span class="ico">💰<span class="nbadge" id="b-badge"></span></span><span class="lbl">Billing</span></button>
+  <button class="ni" onclick="gotoTab('more')" id="ni-more"><span class="ico">⚡</span><span class="lbl">More</span></button>
+</nav>
+
+<button id="fab" onclick="openAdd()">＋</button>
+
+<!-- Modal -->
+<div class="mov" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="msh">
+    <div class="mhandle"></div>
+    <div class="mhdr"><span class="mtitle" id="mtitle"></span><button class="mclose" onclick="closeModal()">✕</button></div>
+    <div class="mbody" id="mbody"></div>
+  </div>
+</div>
+
+<!-- Confirm -->
+<div id="cdialog">
+  <div class="cbox">
+    <div class="cico" id="cico">⚠️</div>
+    <div class="ctitle" id="ctitle"></div>
+    <div class="cmsg" id="cmsg"></div>
+    <div class="cbtns">
+      <button class="btn btn-ghost btn-full" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-red btn-full" id="cok" onclick="runConfirm()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// DB
+// ═══════════════════════════════════════════
+let db;
+const DB_VERSION = 3;
+
+function initDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('TMS_DB',DB_VERSION);
+    r.onupgradeneeded=e=>{
+      const d=e.target.result;
+      if(!d.objectStoreNames.contains('flats')){
+        const s=d.createObjectStore('flats',{keyPath:'id',autoIncrement:true});
+        s.createIndex('block','block',{unique:false});
+        s.createIndex('status','status',{unique:false});
+      }
+      if(!d.objectStoreNames.contains('tenants')){
+        const s=d.createObjectStore('tenants',{keyPath:'id',autoIncrement:true});
+        s.createIndex('flatId','flatId',{unique:false});
+      }
+      if(!d.objectStoreNames.contains('billing')){
+        const s=d.createObjectStore('billing',{keyPath:'id',autoIncrement:true});
+        s.createIndex('flatId','flatId',{unique:false});
+        s.createIndex('month','month',{unique:false});
+      }
+      if(!d.objectStoreNames.contains('settings')){
+        d.createObjectStore('settings',{keyPath:'key'});
+      }
+    };
+    r.onsuccess=e=>{db=e.target.result;res()};
+    r.onerror=e=>rej(e);
+  });
+}
+
+const g=(st,id)=>new Promise((res,rej)=>{const t=db.transaction(st,'readonly'),r=t.objectStore(st).get(id);r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
+const ga=(st)=>new Promise((res,rej)=>{const t=db.transaction(st,'readonly'),r=t.objectStore(st).getAll();r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
+const add=(st,d)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).add(d);r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
+const put=(st,d)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).put(d);r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
+const del=(st,id)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).delete(id);r.onsuccess=()=>res();r.onerror=e=>rej(e)});
+
+async function getSetting(key,def){
+  const r=await g('settings',key);
+  return r?r.value:def;
+}
+async function setSetting(key,value){
+  await put('settings',{key,value});
+}
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let tab='dash',editId=null,confirmFn=null;
+let cMonth=new Date().getMonth(),cYear=new Date().getFullYear();
+let flatFilter='All';
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const monthKey=()=>`${cYear}-${String(cMonth+1).padStart(2,'0')}`;
+const monthLabel=()=>`${MONTHS[cMonth]} ${cYear}`;
+
+// ═══════════════════════════════════════════
+// NAV
+// ═══════════════════════════════════════════
+function gotoTab(t){
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
+  document.getElementById('pg-'+t).classList.add('active');
+  document.getElementById('ni-'+t).classList.add('active');
+  tab=t;
+  refresh();
+}
+
+function refresh(){
+  if(tab==='dash') renderDash();
+  else if(tab==='flats') renderFlats();
+  else if(tab==='tenants') renderTenants();
+  else if(tab==='billing') renderBilling();
+}
+
+function openAdd(){
+  editId=null;
+  if(tab==='dash'||tab==='flats') openFlatForm();
+  else if(tab==='tenants') openTenantForm();
+  else if(tab==='billing') openBillForm(null);
+  else if(tab==='more') openSettings();
+}
+
+function esc(s){return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
+function openModal(title,html){document.getElementById('mtitle').textContent=title;document.getElementById('mbody').innerHTML=html;document.getElementById('modal').classList.add('open')}
+function closeModal(){document.getElementById('modal').classList.remove('open');editId=null}
+function showConfirm(title,msg,fn,label='Delete',ico='🗑️'){
+  document.getElementById('ctitle').textContent=title;
+  document.getElementById('cmsg').textContent=msg;
+  document.getElementById('cico').textContent=ico;
+  document.getElementById('cok').textContent=label;
+  confirmFn=fn;
+  document.getElementById('cdialog').classList.add('open');
+}
+function closeConfirm(){document.getElementById('cdialog').classList.remove('open');confirmFn=null}
+function runConfirm(){if(confirmFn)confirmFn();closeConfirm()}
+
+function setFlatFilter(v,chipsId,el){
+  flatFilter=v;
+  document.getElementById(chipsId).querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ═══════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════
+async function renderDash(){
+  const flats=await ga('flats'),tenants=await ga('tenants'),bills=await ga('billing');
+  const settings={
+    society: await getSetting('society','Society Management'),
+    expiryDays: parseInt(await getSetting('expiryDays','60'))
+  };
+
+  const total=flats.length, occ=flats.filter(f=>f.status==='Occupied').length, vac=flats.filter(f=>f.status==='Vacant').length;
+  const mk=monthKey();
+  const monthBills=bills.filter(b=>b.month===mk);
+  const paid=monthBills.filter(b=>b.rentStatus==='Paid');
+  const pending=monthBills.filter(b=>['Pending','Overdue'].includes(b.rentStatus));
+  const totalRent=flats.filter(f=>f.status==='Occupied').reduce((s,f)=>s+(parseFloat(f.rent)||0),0);
+  const collected=paid.reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0);
+  const pct=occ>0?Math.round(paid.length/occ*100):0;
+
+  // Expiring agreements
+  const today=new Date(); today.setHours(0,0,0,0);
+  const thresh=settings.expiryDays;
+  const expiring=tenants.filter(t=>{
+    if(!t.agreementEnd) return false;
+    const end=new Date(t.agreementEnd);
+    return (end-today)/86400000<=thresh;
+  });
+
+  // Overdue
+  const overdueBills=bills.filter(b=>['Pending','Overdue'].includes(b.rentStatus));
+
+  // Update nav badge
+  const bb=document.getElementById('b-badge');
+  bb.textContent=pending.length;
+  bb.style.display=pending.length>0?'':'none';
+
+  document.getElementById('hdr-sub').textContent=`${settings.society} · ${monthLabel()}`;
+
+  let over2=[];
+  for(const b of overdueBills.slice(0,5)){
+    const fl=flats.find(f=>f.id===b.flatId);
+    over2.push(`<div class="card"><div class="cb crow"><div class="cavatar" style="background:var(--red);font-size:12px">⚠</div><div class="cinfo"><div class="cname">${esc(fl?fl.flatNo:'?')} (${esc(fl?fl.block:'')})</div><div class="csub">${b.month}</div></div><div class="cright"><span class="badge bg-red">${b.rentStatus}</span><div style="font-size:12px;font-weight:700;margin-top:3px">₹${(parseFloat(b.rentDue)||0).toLocaleString('en-IN')}</div></div></div></div>`);
+  }
+
+  let exp2=[];
+  for(const t of expiring.slice(0,5)){
+    const fl=flats.find(f=>f.id===t.flatId);
+    const end=new Date(t.agreementEnd);
+    const days=Math.ceil((end-today)/86400000);
+    exp2.push(`<div class="card"><div class="cb crow"><div class="cavatar" style="background:var(--amber);font-size:12px">${days<0?'❌':'⚠'}</div><div class="cinfo"><div class="cname">${esc(t.name)}</div><div class="csub">${esc(fl?`${fl.flatNo} (${fl.block})`:'')}</div></div><div class="cright"><span class="badge ${days<0?'bg-red':'bg-yellow'}">${days<0?'Expired':days+'d left'}</span></div></div></div>`);
+  }
+
+  document.getElementById('dash-content').innerHTML=`
+    <div class="banner" style="background:linear-gradient(135deg,var(--primary),#2563a8)">
+      <h2>💼 ${monthLabel()}</h2>
+      <p>${settings.society}</p>
+      <div class="big">₹${collected.toLocaleString('en-IN')}</div>
+      <div class="sm">collected of ₹${totalRent.toLocaleString('en-IN')} total</div>
+      <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
+      <div style="font-size:11px;opacity:.7;margin-top:4px">${pct}% · ${paid.length}/${occ} occupied flats paid</div>
+    </div>
+    <div class="srow">
+      <div class="scard" onclick="gotoTab('flats')"><div class="snum" style="color:var(--blue)">${total}</div><div class="slbl">Total Flats</div></div>
+      <div class="scard" onclick="gotoTab('flats')"><div class="snum" style="color:var(--green)">${occ}</div><div class="slbl">Occupied</div></div>
+      <div class="scard" onclick="gotoTab('flats')"><div class="snum" style="color:var(--gray-500)">${vac}</div><div class="slbl">Vacant</div></div>
+    </div>
+    <div class="srow">
+      <div class="scard" onclick="gotoTab('billing')"><div class="snum" style="color:var(--green)">${paid.length}</div><div class="slbl">Paid</div></div>
+      <div class="scard" onclick="gotoTab('billing')"><div class="snum" style="color:var(--red)">${pending.length}</div><div class="slbl">Overdue</div></div>
+      <div class="scard" onclick="gotoTab('tenants')"><div class="snum" style="color:var(--amber)">${expiring.length}</div><div class="slbl">Expiring</div></div>
+    </div>
+    ${overdueBills.length>0?`<div class="sh"><span class="st">⚠ Overdue / Pending Rents</span></div>${over2.join('')}${overdueBills.length>5?`<div style="text-align:center;font-size:12px;color:var(--gray-400);padding:4px">+${overdueBills.length-5} more — check Billing tab</div>`:''}`:''}
+    ${expiring.length>0?`<div class="sh" style="margin-top:${overdueBills.length>0?12:0}px"><span class="st">📅 Agreement Expirations</span></div>${exp2.join('')}`:''}
+    ${total===0?`<div class="empty"><div class="eico">🏗</div><div class="etitle">Welcome to TMS!</div><div class="esub">Start by adding your buildings & flats</div></div>`:''}
+  `;
+}
+
+// ═══════════════════════════════════════════
+// FLATS (BUILDINGS)
+// ═══════════════════════════════════════════
+async function renderFlats(query=''){
+  let flats=await ga('flats');
+  const q=query||document.getElementById('flat-srch')?.value||'';
+  if(flatFilter!=='All') flats=flats.filter(f=>f.status===flatFilter);
+  if(q) flats=flats.filter(f=>`${f.flatNo} ${f.block} ${f.floor} ${f.bedrooms}`.toLowerCase().includes(q.toLowerCase()));
+
+  const el=document.getElementById('flats-list');
+  if(!flats.length){
+    el.innerHTML=`<div class="empty"><div class="eico">🏗</div><div class="etitle">${(await ga('flats')).length===0?'No flats yet':'No results'}</div><div class="esub">Tap + to add a flat</div></div>`;return;
+  }
+  el.innerHTML=flats.map(f=>{
+    const stc=f.status==='Occupied'?'bg-green':'bg-gray';
+    return`<div class="card">
+      <div class="cb crow">
+        <div class="cavatar" style="background:${f.status==='Occupied'?'var(--green)':'var(--gray-400)'}">🏠</div>
+        <div class="cinfo">
+          <div class="cname">${esc(f.block)} — ${esc(f.flatNo)}</div>
+          <div class="csub">${esc(f.floor)} floor · ${esc(f.bedrooms)} · ${esc(f.furnishing||'')}</div>
+          <div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap">
+            <span class="badge ${stc}">${f.status}</span>
+            ${f.parking==='Yes'?'<span class="badge bg-teal">🚗 Parking</span>':''}
+            ${f.balcony==='Yes'?'<span class="badge bg-blue">🌿 Balcony</span>':''}
+          </div>
+        </div>
+        <div class="cright">
+          <div class="camt">₹${(parseFloat(f.rent)||0).toLocaleString('en-IN')}</div>
+          <div style="font-size:10px;color:var(--gray-400)">/month</div>
+          ${f.maintenance?`<div style="font-size:11px;color:var(--gray-500)">Maint: ₹${parseFloat(f.maintenance).toLocaleString('en-IN')}</div>`:''}
+        </div>
+      </div>
+      <div class="cact">
+        <button class="btn btn-sm btn-ghost" onclick="viewFlat(${f.id})">👁 View</button>
+        <button class="btn btn-sm btn-outline" onclick="editFlat(${f.id})">✏️ Edit</button>
+        <button class="btn btn-sm btn-ghost" style="color:var(--red);margin-left:auto" onclick="deleteFlat(${f.id},'${esc(f.flatNo)}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openFlatForm(data){
+  const f=data||{};
+  const blocks=await getSetting('blocks','Block A,Block B,Block C');
+  const blockList=blocks.split(',').map(b=>b.trim()).filter(Boolean);
+  const datalistOpts=blockList.map(b=>`<option value="${esc(b)}">`).join('');
+  openModal(editId?'Edit Flat':'Add Flat',`
+    <datalist id="block-list">${datalistOpts}</datalist>
+    <div class="frow">
+      <div class="fg"><label class="fl">Block / Building *</label>
+        <input class="fc" id="ff-block" list="block-list" value="${esc(f.block||blockList[0]||'')}" placeholder="e.g. Block A, Tower 1…"></div>
+      <div class="fg"><label class="fl">Flat No. *</label>
+        <input class="fc" id="ff-flatNo" value="${esc(f.flatNo||'')}" placeholder="e.g. A-101"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Floor</label>
+        <select class="fc" id="ff-floor">
+          ${['Ground','First','Second','Third','Fourth','Fifth','Sixth'].map(x=>`<option ${f.floor===x?'selected':''}>${x}</option>`).join('')}
+        </select></div>
+      <div class="fg"><label class="fl">Bedrooms</label>
+        <select class="fc" id="ff-bed">
+          ${['RK','1RK','1 BHK','2 BHK','3 BHK'].map(x=>`<option ${f.bedrooms===x?'selected':''}>${x}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="fg"><label class="fl">Furnishing</label>
+      <select class="fc" id="ff-furn">
+        ${['Fully Furnished','Semi Furnished','Unfurnished'].map(x=>`<option ${f.furnishing===x?'selected':''}>${x}</option>`).join('')}
+      </select></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Car Parking</label>
+        <div class="radio-row">
+          <label><input type="radio" name="park" value="Yes" ${f.parking!=='No'?'checked':''}> Yes</label>
+          <label><input type="radio" name="park" value="No" ${f.parking==='No'?'checked':''}> No</label>
+        </div></div>
+      <div class="fg"><label class="fl">Balcony</label>
+        <div class="radio-row">
+          <label><input type="radio" name="balc" value="Yes" ${f.balcony!=='No'?'checked':''}> Yes</label>
+          <label><input type="radio" name="balc" value="No" ${f.balcony==='No'?'checked':''}> No</label>
+        </div></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Monthly Rent (₹) *</label>
+        <input class="fc" id="ff-rent" type="number" value="${f.rent||''}" placeholder="15000"></div>
+      <div class="fg"><label class="fl">Maintenance (₹)</label>
+        <input class="fc" id="ff-maint" type="number" value="${f.maintenance||''}" placeholder="1000"></div>
+    </div>
+    <div class="fg"><label class="fl">Status</label>
+      <select class="fc" id="ff-status">
+        <option ${f.status==='Occupied'||!f.status?'selected':''}>Occupied</option>
+        <option ${f.status==='Vacant'?'selected':''}>Vacant</option>
+      </select></div>
+    <div class="fg"><label class="fl">Notes</label>
+      <textarea class="fc" id="ff-notes">${esc(f.notes||'')}</textarea></div>
+    <button class="btn btn-primary btn-full" onclick="saveFlat()" style="margin-top:4px">${editId?'✅ Update Flat':'➕ Add Flat'}</button>
+  `);
+}
+
+async function saveFlat(){
+  const flatNo=document.getElementById('ff-flatNo').value.trim();
+  const rent=document.getElementById('ff-rent').value;
+  if(!flatNo||!rent){toast('⚠️ Flat No. and Rent are required');return}
+  const data={
+    block:document.getElementById('ff-block').value,
+    flatNo,
+    floor:document.getElementById('ff-floor').value,
+    bedrooms:document.getElementById('ff-bed').value,
+    furnishing:document.getElementById('ff-furn').value,
+    parking:document.querySelector('[name="park"]:checked')?.value||'Yes',
+    balcony:document.querySelector('[name="balc"]:checked')?.value||'Yes',
+    rent:parseFloat(rent),
+    maintenance:parseFloat(document.getElementById('ff-maint').value)||0,
+    status:document.getElementById('ff-status').value,
+    notes:document.getElementById('ff-notes').value.trim(),
+    updatedAt:new Date().toISOString()
+  };
+  if(editId){data.id=editId;await put('flats',data);toast('✅ Flat updated')}
+  else{data.createdAt=new Date().toISOString();await add('flats',data);toast('✅ Flat added')}
+  closeModal();renderFlats();renderDash();
+}
+
+async function editFlat(id){editId=id;const f=await g('flats',id);openFlatForm(f)}
+
+async function viewFlat(id){
+  const f=await g('flats',id);
+  const tenants=await ga('tenants');
+  const tenant=tenants.find(t=>t.flatId===id);
+  openModal(`🏠 ${f.block} — ${f.flatNo}`,`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px">
+      <div class="scard"><div class="snum">₹${(parseFloat(f.rent)||0).toLocaleString('en-IN')}</div><div class="slbl">Rent/Month</div></div>
+      <div class="scard"><span class="badge ${f.status==='Occupied'?'bg-green':'bg-gray'}">${f.status}</span></div>
+    </div>
+    <div style="font-size:13px;color:var(--gray-600);line-height:2">
+      🏗 ${esc(f.block)} · ${esc(f.flatNo)}<br>
+      📐 ${esc(f.floor)} floor · ${esc(f.bedrooms)} · ${esc(f.furnishing||'')}<br>
+      🚗 Parking: ${esc(f.parking||'—')} · 🌿 Balcony: ${esc(f.balcony||'—')}<br>
+      ${f.maintenance?`🔧 Maintenance: ₹${parseFloat(f.maintenance).toLocaleString('en-IN')}<br>`:''}
+      ${f.notes?`📝 ${esc(f.notes)}`:''}
+    </div>
+    ${tenant?`
+    <div style="margin-top:14px;padding:12px;background:var(--green-lt);border-radius:9px">
+      <div style="font-weight:800;color:var(--green);font-size:13px">👤 Current Tenant</div>
+      <div style="font-size:13px;margin-top:5px">${esc(tenant.name)} · 📞 ${esc(tenant.phone||'—')}</div>
+      <div style="font-size:12px;color:var(--gray-600)">Move-in: ${tenant.moveIn||'—'} · End: ${tenant.agreementEnd||'—'}</div>
+    </div>`:`<div style="margin-top:14px;padding:12px;background:var(--gray-100);border-radius:9px;font-size:13px;color:var(--gray-500)">No tenant registered</div>`}
+    <div style="display:flex;gap:9px;margin-top:14px">
+      <button class="btn btn-outline btn-full" onclick="closeModal();editFlat(${id})">✏️ Edit</button>
+      <button class="btn btn-primary btn-full" onclick="closeModal();gotoTab('billing')">💰 Billing</button>
+    </div>
+  `);
+}
+
+function deleteFlat(id,name){
+  showConfirm('Delete Flat',`Remove flat "${name}" and all its data?`,async()=>{
+    await del('flats',id);
+    const tens=await ga('tenants');for(const t of tens.filter(x=>x.flatId===id))await del('tenants',t.id);
+    const bills=await ga('billing');for(const b of bills.filter(x=>x.flatId===id))await del('billing',b.id);
+    toast('🗑️ Flat deleted');renderFlats();renderDash();
+  });
+}
+
+// ═══════════════════════════════════════════
+// TENANTS
+// ═══════════════════════════════════════════
+async function renderTenants(query=''){
+  const q=query||document.getElementById('ten-srch')?.value||'';
+  let tenants=await ga('tenants');
+  const flats=await ga('flats');
+  if(q) tenants=tenants.filter(t=>`${t.name} ${t.phone} ${t.email}`.toLowerCase().includes(q.toLowerCase()));
+  const el=document.getElementById('tenants-list');
+  if(!tenants.length){
+    el.innerHTML=`<div class="empty"><div class="eico">👤</div><div class="etitle">${(await ga('tenants')).length===0?'No tenants yet':'No results'}</div><div class="esub">Tap + to register a tenant</div></div>`;return;
+  }
+  const today=new Date();today.setHours(0,0,0,0);
+  el.innerHTML=tenants.map(t=>{
+    const fl=flats.find(f=>f.id===t.flatId);
+    const ini=t.name.trim().split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    const end=t.agreementEnd?new Date(t.agreementEnd):null;
+    const days=end?Math.ceil((end-today)/86400000):null;
+    const stBadge=days===null?'':`<span class="badge ${days<0?'bg-red':days<=30?'bg-yellow':'bg-green'}">${days<0?'Expired':days<=30?days+'d left':'Active'}</span>`;
+    return`<div class="card">
+      <div class="cb crow">
+        <div class="cavatar">${ini||'?'}</div>
+        <div class="cinfo">
+          <div class="cname">${esc(t.name)}</div>
+          <div class="csub">${fl?`${esc(fl.block)} — ${esc(fl.flatNo)}`:'No flat'} · 📞 ${esc(t.phone||'—')}</div>
+          <div style="margin-top:4px">${stBadge}</div>
+        </div>
+        <div class="cright">
+          <div class="camt">₹${(parseFloat(t.rent)||0).toLocaleString('en-IN')}</div>
+          <div style="font-size:10px;color:var(--gray-400)">/month</div>
+        </div>
+      </div>
+      <div class="cact">
+        <button class="btn btn-sm btn-ghost" onclick="viewTenant(${t.id})">👁 View</button>
+        <button class="btn btn-sm btn-outline" onclick="editTenant(${t.id})">✏️ Edit</button>
+        <button class="btn btn-sm btn-ghost" style="color:var(--red);margin-left:auto" onclick="deleteTenant(${t.id},'${esc(t.name)}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openTenantForm(data){
+  const f=data||{};
+  const flats=await ga('flats');
+  const flatOpts=flats.map(fl=>`<option value="${fl.id}" ${f.flatId===fl.id?'selected':''}>${esc(fl.block)} — ${esc(fl.flatNo)} (${fl.status})</option>`).join('');
+  openModal(editId?'Edit Tenant':'Register Tenant',`
+    <div class="fg"><label class="fl">Flat *</label>
+      <select class="fc" id="tf-flat" onchange="onFlatSelect(this)">
+        <option value="">Select flat…</option>${flatOpts}
+      </select></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Full Name *</label>
+        <input class="fc" id="tf-name" value="${esc(f.name||'')}" placeholder="e.g. Rajesh Kumar"></div>
+      <div class="fg"><label class="fl">Phone</label>
+        <input class="fc" id="tf-phone" type="tel" value="${esc(f.phone||'')}" placeholder="+91 98765 43210"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Email</label>
+        <input class="fc" id="tf-email" type="email" value="${esc(f.email||'')}" placeholder="tenant@email.com"></div>
+      <div class="fg"><label class="fl">Persons Staying</label>
+        <input class="fc" id="tf-persons" type="number" value="${f.persons||''}" placeholder="2"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Monthly Rent (₹)</label>
+        <input class="fc" id="tf-rent" type="number" value="${f.rent||''}" placeholder="auto from flat"></div>
+      <div class="fg"><label class="fl">Deposit (₹)</label>
+        <input class="fc" id="tf-deposit" type="number" value="${f.deposit||''}" placeholder="30000"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Move-In Date</label>
+        <input class="fc" id="tf-movein" type="date" value="${f.moveIn||new Date().toISOString().split('T')[0]}" oninput="calcEnd()"></div>
+      <div class="fg"><label class="fl">Agreement Duration</label>
+        <select class="fc" id="tf-dur" onchange="calcEnd()">
+          ${['6 months','11 months','12 months','24 months'].map(x=>`<option ${f.agreementDur===x?'selected':''}>${x}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Agreement End (auto)</label>
+        <input class="fc" id="tf-end" type="date" value="${f.agreementEnd||''}"></div>
+      <div class="fg"><label class="fl">Notice Period</label>
+        <select class="fc" id="tf-notice">
+          ${['30 days','60 days','90 days'].map(x=>`<option ${f.noticePeriod===x?'selected':''}>${x}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="fg"><label class="fl">Remarks</label>
+      <textarea class="fc" id="tf-remarks">${esc(f.remarks||'')}</textarea></div>
+    <button class="btn btn-green btn-full" onclick="saveTenant()" style="margin-top:4px">${editId?'✅ Update Tenant':'➕ Register Tenant'}</button>
+  `);
+  if(!editId) calcEnd();
+}
+
+async function onFlatSelect(el){
+  const id=parseInt(el.value);
+  if(!id) return;
+  const fl=await g('flats',id);
+  if(fl&&fl.rent) document.getElementById('tf-rent').value=fl.rent;
+}
+
+function calcEnd(){
+  try{
+    const d=new Date(document.getElementById('tf-movein').value);
+    const dur=document.getElementById('tf-dur').value;
+    const m=parseInt(dur);
+    if(!isNaN(d)&&!isNaN(m)){
+      d.setMonth(d.getMonth()+m);d.setDate(d.getDate()-1);
+      document.getElementById('tf-end').value=d.toISOString().split('T')[0];
+    }
+  }catch(e){}
+}
+
+async function saveTenant(){
+  const flatId=parseInt(document.getElementById('tf-flat').value);
+  const name=document.getElementById('tf-name').value.trim();
+  if(!flatId||!name){toast('⚠️ Flat and Name are required');return}
+  const data={
+    flatId,name,
+    phone:document.getElementById('tf-phone').value.trim(),
+    email:document.getElementById('tf-email').value.trim(),
+    persons:parseInt(document.getElementById('tf-persons').value)||0,
+    rent:parseFloat(document.getElementById('tf-rent').value)||0,
+    deposit:parseFloat(document.getElementById('tf-deposit').value)||0,
+    moveIn:document.getElementById('tf-movein').value,
+    agreementDur:document.getElementById('tf-dur').value,
+    agreementEnd:document.getElementById('tf-end').value,
+    noticePeriod:document.getElementById('tf-notice').value,
+    remarks:document.getElementById('tf-remarks').value.trim(),
+    updatedAt:new Date().toISOString()
+  };
+  if(editId){data.id=editId;await put('tenants',data);toast('✅ Tenant updated')}
+  else{data.createdAt=new Date().toISOString();await add('tenants',data);toast('✅ Tenant registered')}
+  closeModal();renderTenants();renderDash();
+}
+
+async function editTenant(id){editId=id;const t=await g('tenants',id);openTenantForm(t)}
+
+async function viewTenant(id){
+  const t=await g('tenants',id);
+  const fl=await g('flats',t.flatId);
+  const bills=await ga('billing');
+  const tBills=bills.filter(b=>b.flatId===t.flatId).sort((a,b)=>b.month.localeCompare(a.month));
+  const totalPaid=tBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0);
+  const today=new Date();today.setHours(0,0,0,0);
+  const end=t.agreementEnd?new Date(t.agreementEnd):null;
+  const days=end?Math.ceil((end-today)/86400000):null;
+  openModal(`👤 ${t.name}`,`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px">
+      <div class="scard"><div class="snum">₹${(parseFloat(t.rent)||0).toLocaleString('en-IN')}</div><div class="slbl">Monthly Rent</div></div>
+      <div class="scard"><div class="snum" style="font-size:14px">${fl?`${esc(fl.block)}-${esc(fl.flatNo)}`:'—'}</div><div class="slbl">Flat</div></div>
+    </div>
+    <div style="font-size:13px;color:var(--gray-600);line-height:1.9">
+      ${t.phone?`📞 ${esc(t.phone)}<br>`:''}${t.email?`✉️ ${esc(t.email)}<br>`:''}
+      ${t.persons?`👥 ${t.persons} persons<br>`:''}
+      ${t.moveIn?`📅 Move-in: ${t.moveIn} → ${t.agreementEnd||'—'}<br>`:''}
+      ${days!==null?`<span class="badge ${days<0?'bg-red':days<=30?'bg-yellow':'bg-green'}">${days<0?'Agreement Expired':days+'d left'}</span><br>`:''}
+      ${t.deposit?`🏦 Deposit: ₹${parseFloat(t.deposit).toLocaleString('en-IN')}<br>`:''}
+      ${t.noticePeriod?`⏰ Notice: ${esc(t.noticePeriod)}<br>`:''}
+      ${t.remarks?`📝 ${esc(t.remarks)}`:''}
+    </div>
+    <div style="margin-top:14px">
+      <div class="sh"><span class="st">Billing History</span><span style="font-size:12px;color:var(--green);font-weight:700">Paid: ₹${totalPaid.toLocaleString('en-IN')}</span></div>
+      ${tBills.length===0?'<div style="color:var(--gray-400);font-size:13px;text-align:center;padding:12px">No billing records</div>':
+        tBills.slice(0,8).map(b=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--gray-100)">
+          <span style="font-size:13px;font-weight:700">${b.month}</span>
+          <span class="badge ${b.rentStatus==='Paid'?'bg-green':b.rentStatus==='Overdue'?'bg-red':'bg-yellow'}">${b.rentStatus}</span>
+          <span style="font-size:13px;font-weight:800">₹${(parseFloat(b.total)||0).toLocaleString('en-IN')}</span>
+        </div>`).join('')}
+    </div>
+    <div style="display:flex;gap:9px;margin-top:14px">
+      <button class="btn btn-outline btn-full" onclick="closeModal();editTenant(${id})">✏️ Edit</button>
+      <button class="btn btn-primary btn-full" onclick="closeModal();gotoTab('billing')">💰 Billing</button>
+    </div>
+  `);
+}
+
+function deleteTenant(id,name){
+  showConfirm('Delete Tenant',`Remove "${name}"?`,async()=>{
+    await del('tenants',id);toast('🗑️ Deleted');renderTenants();renderDash();
+  });
+}
+
+// ═══════════════════════════════════════════
+// BILLING
+// ═══════════════════════════════════════════
+async function renderBilling(){
+  document.getElementById('mlbl').textContent=monthLabel();
+  const flats=await ga('flats');
+  const tenants=await ga('tenants');
+  const bills=await ga('billing');
+  const mk=monthKey();
+  const mBills=bills.filter(b=>b.month===mk);
+  const occFlats=flats.filter(f=>f.status==='Occupied');
+  const paid=mBills.filter(b=>b.rentStatus==='Paid');
+  const totalDue=occFlats.reduce((s,f)=>s+(parseFloat(f.rent)||0),0);
+  const totalColl=mBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0);
+  const accts=await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque');
+
+  document.getElementById('bill-summary').innerHTML=`
+    <div class="srow">
+      <div class="scard"><div class="snum" style="color:var(--green)">${paid.length}</div><div class="slbl">Paid</div></div>
+      <div class="scard"><div class="snum" style="color:var(--red)">${occFlats.length-paid.length}</div><div class="slbl">Pending</div></div>
+      <div class="scard"><div class="snum" style="font-size:14px;font-weight:900">₹${totalColl.toLocaleString('en-IN')}</div><div class="slbl">Collected</div></div>
+    </div>`;
+
+  if(occFlats.length===0){
+    document.getElementById('bill-list').innerHTML=`<div class="empty"><div class="eico">💰</div><div class="etitle">No occupied flats</div><div class="esub">Mark flats as Occupied first</div></div>`;return;
+  }
+
+  document.getElementById('bill-list').innerHTML=occFlats.map(fl=>{
+    const bill=mBills.find(b=>b.flatId===fl.id);
+    const ten=tenants.find(t=>t.flatId===fl.id);
+    const isPaid=bill?.rentStatus==='Paid';
+    const stBadge=bill?`<span class="badge ${isPaid?'bg-green':bill.rentStatus==='Overdue'?'bg-red':'bg-yellow'}">${bill.rentStatus}</span>`:
+      `<span class="badge bg-gray">No Entry</span>`;
+    return`<div class="card">
+      <div class="bill-row">
+        <div>
+          <div class="cname">${esc(fl.block)} — ${esc(fl.flatNo)}</div>
+          <div class="bill-sub">${ten?esc(ten.name):'No tenant'} · Due: ₹${(parseFloat(fl.rent)||0).toLocaleString('en-IN')}</div>
+          ${bill?`<div class="bill-sub">💳 ${bill.account||'—'} ${bill.paidDate?'· '+bill.paidDate:''}</div>`:''}
+        </div>
+        <div style="text-align:right">
+          ${stBadge}
+          ${bill?`<div style="font-size:12px;font-weight:800;margin-top:4px;color:var(--blue)">₹${(parseFloat(bill.total)||0).toLocaleString('en-IN')}</div>`:''}
+        </div>
+      </div>
+      ${bill?`<div class="util-row" style="font-size:11px;color:var(--gray-600)">
+        ${bill.waterAmount?`💧 Water: ₹${parseFloat(bill.waterAmount).toLocaleString('en-IN')} (${bill.waterUnits||0} units)`:''}
+        ${bill.elecAmount?`⚡ Elec: ₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')} (${bill.elecUnits||0} kWh)`:''}
+      </div>`:''}
+      <div class="cact">
+        ${!isPaid?`<button class="btn btn-sm btn-green btn-full" onclick="quickPaid(${fl.id},${fl.rent},'${mk}',${bill?.id||'null'})">✓ Quick Mark Paid</button>`:''}
+        ${bill?`<button class="btn btn-sm btn-outline" onclick="editBill(${bill.id})">✏️ Edit</button>`:
+          `<button class="btn btn-sm btn-amber" onclick="openBillForm(${fl.id})">+ Add Entry</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function quickPaid(flatId,rent,mk,existId){
+  const data={flatId,month:mk,rentDue:rent,rentPaid:rent,rentStatus:'Paid',
+    waterUnits:0,waterRate:0,waterAmount:0,elecUnits:0,elecAmount:0,elecStatus:'Paid',
+    total:rent,account:'Cash',paidDate:new Date().toISOString().split('T')[0],notes:'',createdAt:new Date().toISOString()};
+  if(existId&&existId!=='null'){data.id=existId;await put('billing',data)}
+  else await add('billing',data);
+  toast('✅ Marked as Paid');renderBilling();renderDash();
+}
+
+async function openBillForm(flatId,billData){
+  const flats=await ga('flats');
+  const f=billData||{};
+  const mk=monthKey();
+  const accts=(await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque')).split(',');
+  const flatOpts=flats.filter(fl=>fl.status==='Occupied').map(fl=>`<option value="${fl.id}" ${(f.flatId===fl.id||flatId===fl.id)?'selected':''}>${esc(fl.block)} — ${esc(fl.flatNo)}</option>`).join('');
+  const acctOpts=accts.map(a=>`<option ${f.account===a.trim()?'selected':''}>${esc(a.trim())}</option>`).join('');
+
+  openModal(editId?'Edit Billing Entry':'Add Billing Entry',`
+    <div class="fg"><label class="fl">Flat *</label>
+      <select class="fc" id="bf-flat" onchange="onBillFlatSelect(this)">
+        <option value="">Select flat…</option>${flatOpts}
+      </select></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Month *</label>
+        <input class="fc" id="bf-month" type="month" value="${f.month||mk}"></div>
+      <div class="fg"><label class="fl">Account / Bank</label>
+        <select class="fc" id="bf-acct">${acctOpts}</select></div>
+    </div>
+    <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:var(--amber);text-transform:uppercase;letter-spacing:.5px">— Rent —</div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Rent Due (₹)</label>
+        <input class="fc" id="bf-rdue" type="number" value="${f.rentDue||''}" oninput="calcTotal()" placeholder="15000"></div>
+      <div class="fg"><label class="fl">Rent Collected (₹)</label>
+        <input class="fc" id="bf-rpaid" type="number" value="${f.rentPaid||''}" oninput="calcTotal()"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Rent Status</label>
+        <select class="fc" id="bf-rst">
+          ${['Paid','Pending','Overdue','Partial'].map(x=>`<option ${f.rentStatus===x?'selected':''}>${x}</option>`).join('')}
+        </select></div>
+      <div class="fg"><label class="fl">Payment Date</label>
+        <input class="fc" id="bf-date" type="date" value="${f.paidDate||new Date().toISOString().split('T')[0]}"></div>
+    </div>
+    <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:var(--teal);text-transform:uppercase;letter-spacing:.5px">— Water Bill —</div>
+    <div class="frow3">
+      <div class="fg"><label class="fl">Units</label>
+        <input class="fc" id="bf-wu" type="number" value="${f.waterUnits||0}" oninput="calcWater()"></div>
+      <div class="fg"><label class="fl">Rate/Unit</label>
+        <input class="fc" id="bf-wr" type="number" step="0.01" value="${f.waterRate||0.10}" oninput="calcWater()"></div>
+      <div class="fg"><label class="fl">Amount (₹)</label>
+        <input class="fc" id="bf-wa" readonly value="${f.waterAmount||0}"></div>
+    </div>
+    <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:.5px">— Electricity —</div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Units (kWh)</label>
+        <input class="fc" id="bf-eu" type="number" value="${f.elecUnits||0}"></div>
+      <div class="fg"><label class="fl">Amount (₹)</label>
+        <input class="fc" id="bf-ea" type="number" value="${f.elecAmount||0}" oninput="calcTotal()"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Elec Status</label>
+        <select class="fc" id="bf-est">
+          ${['Paid','Pending','Overdue'].map(x=>`<option ${f.elecStatus===x?'selected':''}>${x}</option>`).join('')}
+        </select></div>
+      <div class="fg"><label class="fl">Total Due (₹)</label>
+        <input class="fc" id="bf-total" readonly value="${f.total||0}" style="font-weight:800;color:var(--blue)"></div>
+    </div>
+    <div class="fg"><label class="fl">Notes / Cheque No.</label>
+      <input class="fc" id="bf-notes" value="${esc(f.notes||'')}"></div>
+    <button class="btn btn-amber btn-full" onclick="saveBill()" style="margin-top:4px">${editId?'✅ Update Entry':'💾 Save Entry'}</button>
+  `);
+  calcTotal();
+}
+
+function calcWater(){
+  try{const a=(parseFloat(document.getElementById('bf-wu').value)||0)*(parseFloat(document.getElementById('bf-wr').value)||0);
+    document.getElementById('bf-wa').value=a.toFixed(2);calcTotal();}catch(e){}
+}
+function calcTotal(){
+  try{const t=(parseFloat(document.getElementById('bf-rdue').value)||0)+(parseFloat(document.getElementById('bf-wa').value)||0)+(parseFloat(document.getElementById('bf-ea').value)||0);
+    document.getElementById('bf-total').value=t.toFixed(2);}catch(e){}
+}
+
+async function onBillFlatSelect(el){
+  const id=parseInt(el.value);if(!id)return;
+  const fl=await g('flats',id);
+  if(fl&&fl.rent)document.getElementById('bf-rdue').value=fl.rent;
+  calcTotal();
+}
+
+async function saveBill(){
+  const flatId=parseInt(document.getElementById('bf-flat').value);
+  if(!flatId){toast('⚠️ Select a flat');return}
+  const data={flatId,
+    month:document.getElementById('bf-month').value,
+    account:document.getElementById('bf-acct').value,
+    rentDue:parseFloat(document.getElementById('bf-rdue').value)||0,
+    rentPaid:parseFloat(document.getElementById('bf-rpaid').value)||0,
+    rentStatus:document.getElementById('bf-rst').value,
+    paidDate:document.getElementById('bf-date').value,
+    waterUnits:parseFloat(document.getElementById('bf-wu').value)||0,
+    waterRate:parseFloat(document.getElementById('bf-wr').value)||0.10,
+    waterAmount:parseFloat(document.getElementById('bf-wa').value)||0,
+    elecUnits:parseFloat(document.getElementById('bf-eu').value)||0,
+    elecAmount:parseFloat(document.getElementById('bf-ea').value)||0,
+    elecStatus:document.getElementById('bf-est').value,
+    total:parseFloat(document.getElementById('bf-total').value)||0,
+    notes:document.getElementById('bf-notes').value.trim(),
+    createdAt:new Date().toISOString()
+  };
+  if(editId){data.id=editId;await put('billing',data);toast('✅ Updated')}
+  else{await add('billing',data);toast('✅ Saved')}
+  closeModal();renderBilling();renderDash();
+}
+
+async function editBill(id){editId=id;const b=await g('billing',id);openBillForm(b.flatId,b)}
+
+function chMonth(d){
+  cMonth+=d;
+  if(cMonth>11){cMonth=0;cYear++}
+  if(cMonth<0){cMonth=11;cYear--}
+  renderBilling();
+}
+
+// ═══════════════════════════════════════════
+// ACTIONS
+// ═══════════════════════════════════════════
+async function doMarkPaid(){
+  const flats=await ga('flats');
+  const occ=flats.filter(f=>f.status==='Occupied');
+  const accts=(await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque')).split(',');
+  const flatOpts=occ.map(f=>`<option value="${f.id}">${esc(f.block)} — ${esc(f.flatNo)}</option>`).join('');
+  const bills=await ga('billing');
+  const months=[...new Set(bills.map(b=>b.month))].sort().reverse().slice(0,24);
+  const mk=monthKey();
+
+  openModal('✅ Mark as Paid',`
+    <div class="fg"><label class="fl">Flat *</label>
+      <select class="fc" id="mp-flat"><option value="">Select flat…</option>${flatOpts}</select></div>
+    <div class="fg"><label class="fl">Month *</label>
+      <input class="fc" id="mp-month" type="month" value="${mk}"></div>
+    <div class="fg"><label class="fl">Account</label>
+      <select class="fc" id="mp-acct">${accts.map(a=>`<option>${esc(a.trim())}</option>`).join('')}</select></div>
+    <button class="btn btn-green btn-full" onclick="runMarkPaid()">✅ Mark as PAID</button>
+    <div id="mp-result" style="margin-top:10px;font-size:13px;color:var(--green)"></div>
+  `);
+}
+
+async function runMarkPaid(){
+  const flatId=parseInt(document.getElementById('mp-flat').value);
+  const month=document.getElementById('mp-month').value;
+  const acct=document.getElementById('mp-acct').value;
+  if(!flatId||!month){toast('⚠️ Select flat and month');return}
+  const fl=await g('flats',flatId);
+  const bills=await ga('billing');
+  const existing=bills.find(b=>b.flatId===flatId&&b.month===month);
+  if(existing){
+    existing.rentPaid=existing.rentDue;existing.rentStatus='Paid';existing.elecStatus='Paid';
+    existing.account=acct;existing.paidDate=new Date().toISOString().split('T')[0];
+    await put('billing',existing);
+  } else {
+    const rent=parseFloat(fl?.rent)||0;
+    await add('billing',{flatId,month,rentDue:rent,rentPaid:rent,rentStatus:'Paid',
+      waterUnits:0,waterRate:0.10,waterAmount:0,elecUnits:0,elecAmount:0,elecStatus:'Paid',
+      total:rent,account:acct,paidDate:new Date().toISOString().split('T')[0],notes:'',createdAt:new Date().toISOString()});
+  }
+  document.getElementById('mp-result').textContent=`✅ ${fl?.block} — ${fl?.flatNo} marked PAID for ${month}`;
+  toast('✅ Marked as Paid');renderDash();
+}
+
+async function doAddNextMonth(){
+  const today=new Date();
+  const nxtM=new Date(today.getFullYear(),today.getMonth()+1,1);
+  const nxtKey=`${nxtY=nxtM.getFullYear()}-${String(nxtM.getMonth()+1).padStart(2,'0')}`;
+  const nxtLabel=`${MONTHS[nxtM.getMonth()]} ${nxtM.getFullYear()}`;
+  const flats=await ga('flats');
+  const bills=await ga('billing');
+  const occ=flats.filter(f=>f.status==='Occupied');
+  const existing=bills.filter(b=>b.month===nxtKey);
+  const toAdd=occ.filter(f=>!existing.find(b=>b.flatId===f.id));
+
+  if(toAdd.length===0){toast(`ℹ️ All rows for ${nxtLabel} already exist`);return}
+
+  showConfirm(`Add ${nxtLabel} Rows`,
+    `Create billing rows for ${toAdd.length} occupied flat(s) for ${nxtLabel}?`,
+    async()=>{
+      for(const fl of toAdd){
+        await add('billing',{flatId:fl.id,month:nxtKey,rentDue:parseFloat(fl.rent)||0,
+          rentPaid:0,rentStatus:'Pending',waterUnits:0,waterRate:0.10,waterAmount:0,
+          elecUnits:0,elecAmount:0,elecStatus:'Pending',total:parseFloat(fl.rent)||0,
+          account:'',paidDate:'',notes:'',createdAt:new Date().toISOString()});
+      }
+      toast(`✅ ${toAdd.length} rows added for ${nxtLabel}`);
+    },'Add Rows','📅');
+}
+
+async function doOverdueWA(){
+  const bills=await ga('billing');
+  const flats=await ga('flats');
+  const tenants=await ga('tenants');
+  const cc=await getSetting('countryCode','91');
+  const society=await getSetting('society','Society Management');
+  const overdue=bills.filter(b=>['Pending','Overdue'].includes(b.rentStatus));
+  if(overdue.length===0){toast('✅ No overdue / pending rents');return}
+
+  const lines=overdue.map(b=>{const fl=flats.find(f=>f.id===b.flatId);return`${fl?fl.block+'-'+fl.flatNo:'?'} | ${b.month} | ₹${b.total}`}).join('\n');
+  showConfirm(`Send ${overdue.length} WA Alerts`,
+    `Open WhatsApp for ${overdue.length} overdue tenant(s)?\n\nEnsure WhatsApp is installed.`,
+    ()=>{
+      let noPh=[];
+      for(const b of overdue){
+        const fl=flats.find(f=>f.id===b.flatId);
+        const ten=tenants.find(t=>t.flatId===b.flatId);
+        if(!ten?.phone){noPh.push(fl?.flatNo||'?');continue}
+        const ph=cleanPhone(ten.phone,cc);
+        const msg=`Dear ${ten.name},\n\nThis is a payment reminder from ${society}.\n────────────────────\nFlat    : *${fl?fl.block+' — '+fl.flatNo:''}*\nMonth  : *${b.month}*\nStatus : *${b.rentStatus}*\nDue    : *₹${b.total.toLocaleString('en-IN')}*\n────────────────────\nPlease pay at the earliest.\n\nThank you,\n${society}`;
+        window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`,'_blank');
+      }
+      if(noPh.length) toast(`⚠️ No phone for: ${noPh.join(', ')}`);
+      else toast('📲 WhatsApp opened!');
+    },'Send Alerts','📲');
+}
+
+async function doExpiryWA(){
+  const tenants=await ga('tenants');
+  const flats=await ga('flats');
+  const cc=await getSetting('countryCode','91');
+  const society=await getSetting('society','Society Management');
+  const thresh=parseInt(await getSetting('expiryDays','60'));
+  const today=new Date();today.setHours(0,0,0,0);
+  const alerts=tenants.filter(t=>{
+    if(!t.agreementEnd) return false;
+    const end=new Date(t.agreementEnd);
+    return (end-today)/86400000<=thresh;
+  });
+  if(alerts.length===0){toast(`✅ All agreements valid beyond ${thresh} days`);return}
+  showConfirm(`Send ${alerts.length} Renewal Alerts`,
+    `Send agreement renewal WA messages to ${alerts.length} tenant(s)?`,
+    ()=>{
+      let noPh=[];
+      for(const t of alerts){
+        if(!t.phone){noPh.push(t.name);continue}
+        const fl=flats.find(f=>f.id===t.flatId);
+        const end=new Date(t.agreementEnd);
+        const days=Math.ceil((end-today)/86400000);
+        const ph=cleanPhone(t.phone,cc);
+        const msg=days<0?
+          `Dear ${t.name},\n\n⚠ *URGENT: Agreement Expired*\n────────────────────\nFlat         : *${fl?fl.block+' — '+fl.flatNo:''}*\nExpired On : *${t.agreementEnd}*\nDays Overdue: *${Math.abs(days)} days*\nRent         : *₹${(parseFloat(t.rent)||0).toLocaleString('en-IN')}*\n────────────────────\nPlease contact us immediately.\n\n${society}`:
+          `Dear ${t.name},\n\n📋 *Agreement Renewal Reminder*\n────────────────────\nFlat       : *${fl?fl.block+' — '+fl.flatNo:''}*\nEnds On  : *${t.agreementEnd}*\nDays Left : *${days} days*\nRent       : *₹${(parseFloat(t.rent)||0).toLocaleString('en-IN')}*\n────────────────────\nPlease contact us to discuss renewal.\n\n${society}`;
+        window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`,'_blank');
+      }
+      if(noPh.length) toast(`⚠️ No phone for: ${noPh.join(', ')}`);
+      else toast('📲 WhatsApp opened!');
+    },'Send Alerts','📋');
+}
+
+function cleanPhone(p,cc){
+  p=p.replace(/\D/g,'');
+  if(!p.startsWith(cc)) p=cc+p;
+  return p;
+}
+
+// ═══════════════════════════════════════════
+// REPORTS
+// ═══════════════════════════════════════════
+async function showReport(type){
+  const flats=await ga('flats');
+  const bills=await ga('billing');
+  let title,html='';
+
+  if(type==='monthly'){
+    const mk=monthKey();
+    title=`Monthly Collection — ${monthLabel()}`;
+    const rows=bills.filter(b=>b.month===mk).map(b=>{
+      const fl=flats.find(f=>f.id===b.flatId);
+      return{flat:`${fl?fl.block+'-'+fl.flatNo:'?'}`,due:b.rentDue,paid:b.rentPaid,water:b.waterAmount,elec:b.elecAmount,total:b.total,status:b.rentStatus,acct:b.account||'—'};
+    });
+    const totDue=rows.reduce((s,r)=>s+r.due,0);const totPaid=rows.reduce((s,r)=>s+r.paid,0);
+    html=`<div class="srow">
+      <div class="scard"><div class="snum" style="font-size:14px">₹${totDue.toLocaleString('en-IN')}</div><div class="slbl">Total Due</div></div>
+      <div class="scard"><div class="snum" style="font-size:14px;color:var(--green)">₹${totPaid.toLocaleString('en-IN')}</div><div class="slbl">Collected</div></div>
+      <div class="scard"><div class="snum" style="font-size:14px;color:var(--red)">₹${(totDue-totPaid).toLocaleString('en-IN')}</div><div class="slbl">Outstanding</div></div>
+    </div>
+    <div class="rtable"><table>
+      <tr><th>Flat</th><th>Due</th><th>Paid</th><th>Water</th><th>Elec</th><th>Total</th><th>Status</th></tr>
+      ${rows.map(r=>`<tr><td>${esc(r.flat)}</td><td>₹${r.due.toLocaleString('en-IN')}</td><td>₹${r.paid.toLocaleString('en-IN')}</td><td>₹${r.water.toLocaleString('en-IN')}</td><td>₹${r.elec.toLocaleString('en-IN')}</td><td><b>₹${r.total.toLocaleString('en-IN')}</b></td><td><span class="badge ${r.status==='Paid'?'bg-green':r.status==='Overdue'?'bg-red':'bg-yellow'}">${r.status}</span></td></tr>`).join('')}
+    </table></div>`;
+  }
+  else if(type==='outstanding'){
+    title='Flat-wise Outstanding';
+    const data={};
+    for(const b of bills){
+      if(!['Pending','Overdue'].includes(b.rentStatus)) continue;
+      if(!data[b.flatId]) data[b.flatId]={due:0,paid:0,months:[]};
+      data[b.flatId].due+=b.rentDue; data[b.flatId].paid+=b.rentPaid; data[b.flatId].months.push(b.month);
+    }
+    const rows=Object.entries(data).map(([fid,d])=>{const fl=flats.find(f=>f.id==fid);return{flat:fl?`${fl.block}-${fl.flatNo}`:'?',months:d.months.length,due:d.due,paid:d.paid,bal:d.due-d.paid};});
+    const totBal=rows.reduce((s,r)=>s+r.bal,0);
+    html=`<div class="srow" style="grid-template-columns:1fr 1fr">
+      <div class="scard"><div class="snum" style="color:var(--red)">${rows.length}</div><div class="slbl">Flats with Dues</div></div>
+      <div class="scard"><div class="snum" style="font-size:14px;color:var(--red)">₹${totBal.toLocaleString('en-IN')}</div><div class="slbl">Total Balance</div></div>
+    </div>
+    <div class="rtable"><table>
+      <tr><th>Flat</th><th>Months</th><th>Due</th><th>Paid</th><th>Balance</th></tr>
+      ${rows.map(r=>`<tr><td><b>${esc(r.flat)}</b></td><td>${r.months}</td><td>₹${r.due.toLocaleString('en-IN')}</td><td>₹${r.paid.toLocaleString('en-IN')}</td><td><b style="color:var(--red)">₹${r.bal.toLocaleString('en-IN')}</b></td></tr>`).join('')}
+    </table></div>`;
+  }
+  else if(type==='allmonths'){
+    title='All Months Summary';
+    const data={};
+    for(const b of bills){
+      if(!b.month) continue;
+      if(!data[b.month]) data[b.month]={due:0,paid:0,water:0,elec:0,total:0,paidC:0,pendC:0};
+      data[b.month].due+=b.rentDue;data[b.month].paid+=b.rentPaid;
+      data[b.month].water+=b.waterAmount;data[b.month].elec+=b.elecAmount;data[b.month].total+=b.total;
+      if(b.rentStatus==='Paid') data[b.month].paidC++;
+      else data[b.month].pendC++;
+    }
+    const rows=Object.entries(data).sort(([a],[b])=>b.localeCompare(a)).map(([mon,d])=>({mon,due:d.due,paid:d.paid,pct:d.due?Math.round(d.paid/d.due*100):0,water:d.water,elec:d.elec,total:d.total,paidC:d.paidC,pendC:d.pendC}));
+    html=`<div class="rtable"><table>
+      <tr><th>Month</th><th>Due</th><th>Collected</th><th>%</th><th>Paid</th><th>Pending</th></tr>
+      ${rows.map(r=>`<tr><td><b>${r.mon}</b></td><td>₹${r.due.toLocaleString('en-IN')}</td><td>₹${r.paid.toLocaleString('en-IN')}</td><td>${r.pct}%</td><td style="color:var(--green)">${r.paidC}</td><td style="color:var(--red)">${r.pendC}</td></tr>`).join('')}
+    </table></div>`;
+  }
+  else if(type==='accounts'){
+    title='Account-wise Collection';
+    const data={};
+    for(const b of bills){
+      const a=b.account||'—';
+      if(!data[a]) data[a]={collected:0,count:0};
+      data[a].collected+=parseFloat(b.rentPaid)||0; data[a].count++;
+    }
+    const rows=Object.entries(data).sort(([,a],[,b])=>b.collected-a.collected).map(([acct,d])=>({acct,entries:d.count,collected:d.collected}));
+    html=`<div class="rtable"><table>
+      <tr><th>Account</th><th>Entries</th><th>Collected</th></tr>
+      ${rows.map(r=>`<tr><td><b>${esc(r.acct)}</b></td><td>${r.entries}</td><td>₹${r.collected.toLocaleString('en-IN')}</td></tr>`).join('')}
+    </table></div>`;
+  }
+
+  openModal(title,html||'<div class="empty"><div class="eico">📊</div><div class="etitle">No data yet</div></div>');
+}
+
+// ═══════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════
+async function openSettings(){
+  const society=await getSetting('society','Society Management');
+  const cc=await getSetting('countryCode','91');
+  const expiryDays=await getSetting('expiryDays','60');
+  const accounts=await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque');
+  const blocks=await getSetting('blocks','Block A,Block B,Block C');
+
+  openModal('⚙️ Settings',`
+    <div class="setting-item">
+      <label class="setting-label">🏢 Society / Building Name</label>
+      <input class="fc" id="s-society" value="${esc(society)}">
+    </div>
+    <div class="setting-item">
+      <label class="setting-label">📱 Country Code (WhatsApp)</label>
+      <input class="fc" id="s-cc" value="${esc(cc)}" placeholder="91">
+    </div>
+    <div class="setting-item">
+      <label class="setting-label">📅 Agreement Expiry Alert (days before)</label>
+      <input class="fc" id="s-exp" type="number" value="${expiryDays}" placeholder="60">
+    </div>
+    <div class="setting-item">
+      <label class="setting-label">🏗 Blocks / Buildings (comma-separated)</label>
+      <input class="fc" id="s-blocks" value="${esc(blocks)}" placeholder="Block A,Block B,Tower 1">
+    </div>
+    <div class="setting-item">
+      <label class="setting-label">🏦 Payment Accounts (comma-separated)</label>
+      <textarea class="fc" id="s-accounts" style="min-height:80px">${esc(accounts)}</textarea>
+    </div>
+    <button class="btn btn-primary btn-full" onclick="saveSettings()" style="margin-top:4px">💾 Save Settings</button>
+  `);
+}
+
+async function saveSettings(){
+  await setSetting('society',document.getElementById('s-society').value.trim());
+  await setSetting('countryCode',document.getElementById('s-cc').value.trim());
+  await setSetting('expiryDays',document.getElementById('s-exp').value.trim());
+  await setSetting('blocks',document.getElementById('s-blocks').value.trim());
+  await setSetting('accounts',document.getElementById('s-accounts').value.trim());
+  toast('✅ Settings saved');closeModal();renderDash();
+}
+
+// ═══════════════════════════════════════════
+// EXCEL EXPORT
+// ═══════════════════════════════════════════
+async function exportExcel(){
+  toast('⏳ Preparing export…');
+  const flats=await ga('flats'),tenants=await ga('tenants'),bills=await ga('billing');
+  const wb=XLSX.utils.book_new();
+
+  const ws1=XLSX.utils.json_to_sheet(flats.map(f=>({'Block':f.block,'Flat No.':f.flatNo,'Floor':f.floor,'Bedrooms':f.bedrooms,'Furnishing':f.furnishing,'Parking':f.parking,'Balcony':f.balcony,'Rent (₹)':f.rent,'Maintenance (₹)':f.maintenance,'Status':f.status,'Notes':f.notes||''})));
+  XLSX.utils.book_append_sheet(wb,ws1,'Building_DB');
+
+  const ws2=XLSX.utils.json_to_sheet(tenants.map(t=>{const fl=flats.find(f=>f.id===t.flatId);return{'Block':fl?.block||'','Flat':fl?.flatNo||'','Name':t.name,'Phone':t.phone||'','Email':t.email||'','Persons':t.persons||0,'Rent (₹)':t.rent,'Deposit (₹)':t.deposit||0,'Move-In':t.moveIn||'','Agreement End':t.agreementEnd||'','Notice Period':t.noticePeriod||'','Remarks':t.remarks||''}}));
+  XLSX.utils.book_append_sheet(wb,ws2,'Tenant_DB');
+
+  const ws3=XLSX.utils.json_to_sheet(bills.map(b=>{const fl=flats.find(f=>f.id===b.flatId);const ten=tenants.find(t=>t.flatId===b.flatId);return{'Month':b.month,'Block':fl?.block||'','Flat':fl?.flatNo||'','Tenant':ten?.name||'','Rent Due':b.rentDue,'Rent Paid':b.rentPaid,'Rent Status':b.rentStatus,'Water Units':b.waterUnits,'Water Rate':b.waterRate,'Water Amt':b.waterAmount,'Elec Units':b.elecUnits,'Elec Amt':b.elecAmount,'Elec Status':b.elecStatus,'Total':b.total,'Account':b.account||'','Date':b.paidDate||'','Notes':b.notes||''}}));
+  XLSX.utils.book_append_sheet(wb,ws3,'Billing');
+
+  XLSX.writeFile(wb,`TMS_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast('✅ Excel downloaded!');
+}
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+async function init(){
+  await initDB();
+  renderDash();
+}
+init();
+</script>
+</body>
+</html>
