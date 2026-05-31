@@ -311,7 +311,10 @@ textarea.fc{resize:vertical;min-height:72px}
     <div class="more-grid">
       <div class="mcard" onclick="openSettings()"><div class="mico">⚙️</div><div class="mtxt">Settings</div><div class="msub">Society, WA, accounts</div></div>
       <div class="mcard" onclick="exportExcel()"><div class="mico">📊</div><div class="mtxt">Export Excel</div><div class="msub">Download all data</div></div>
+      <div class="mcard" onclick="document.getElementById('import-file').click()"><div class="mico">📥</div><div class="mtxt">Import Excel</div><div class="msub">Flats, tenants, billing</div></div>
+      <div class="mcard" onclick="showImportGuide()"><div class="mico">📋</div><div class="mtxt">Import Guide</div><div class="msub">Column format & template</div></div>
     </div>
+    <input type="file" id="import-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImportFile(this)">
   </div>
 </div>
 
@@ -693,11 +696,17 @@ async function openFlatForm(data){
   const datalistOpts=blockList.map(b=>`<option value="${esc(b)}">`).join('');
   // Default block to active building if one is selected
   const defaultBlock=activeBuilding!=='All'?activeBuilding:(f.block||blockList[0]||'');
+  const isCustomBlock=defaultBlock&&!blockList.includes(defaultBlock);
+  const blockSelectOpts=blockList.map(b=>`<option value="${esc(b)}" ${defaultBlock===b?'selected':''}>${esc(b)}</option>`).join('');
   openModal(editId?'Edit Flat':'Add Flat',`
-    <datalist id="block-list">${datalistOpts}</datalist>
     <div class="frow">
       <div class="fg"><label class="fl">Block / Building *</label>
-        <input class="fc" id="ff-block" list="block-list" value="${esc(defaultBlock)}" placeholder="e.g. Block A, Tower 1…"></div>
+        <select class="fc" id="ff-block-sel" onchange="onBlockSelChange(this)">
+          ${blockSelectOpts}
+          <option value="__custom__" ${isCustomBlock?'selected':''}>✏️ Other / Custom…</option>
+        </select>
+        <input class="fc" id="ff-block" style="margin-top:6px;display:${isCustomBlock?'block':'none'}" value="${esc(defaultBlock)}" placeholder="Type building name…">
+      </div>
       <div class="fg"><label class="fl">Flat No. *</label>
         <input class="fc" id="ff-flatNo" value="${esc(f.flatNo||'')}" placeholder="e.g. A-101"></div>
     </div>
@@ -744,12 +753,30 @@ async function openFlatForm(data){
   `);
 }
 
+function onBlockSelChange(sel){
+  const inp=document.getElementById('ff-block');
+  if(sel.value==='__custom__'){
+    inp.style.display='block';inp.focus();inp.value='';
+  } else {
+    inp.style.display='none';inp.value=sel.value;
+  }
+}
+
+function getBlockValue(){
+  const sel=document.getElementById('ff-block-sel');
+  const inp=document.getElementById('ff-block');
+  if(sel&&sel.value==='__custom__') return inp?inp.value.trim():'';
+  return sel?sel.value:inp?inp.value.trim():'';
+}
+
 async function saveFlat(){
   const flatNo=document.getElementById('ff-flatNo').value.trim();
   const rent=document.getElementById('ff-rent').value;
   if(!flatNo||!rent){toast('⚠️ Flat No. and Rent are required');return}
+  const block=getBlockValue();
+  if(!block){toast('⚠️ Block / Building is required');return}
   const data={
-    block:document.getElementById('ff-block').value,
+    block,
     flatNo,
     floor:document.getElementById('ff-floor').value,
     bedrooms:document.getElementById('ff-bed').value,
@@ -1693,6 +1720,213 @@ async function exportExcel(){
   const suffix=activeBuilding!=='All'?`_${activeBuilding.replace(/\s+/g,'_')}`:'';
   XLSX.writeFile(wb,`TMS${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
   toast('✅ Excel downloaded!');
+}
+
+// ═══════════════════════════════════════════
+// IMPORT
+// ═══════════════════════════════════════════
+
+function showImportGuide(){
+  openModal('📋 Import Guide',`
+    <div style="font-size:13px;color:var(--gray-700);line-height:1.8">
+      <div style="background:var(--blue-lt);border-radius:9px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--blue);font-weight:700">
+        💡 The easiest way to get the right format is to first <b>Export</b> your data, fill in new rows in that file, then Import it back.
+      </div>
+      <b>Supported sheets:</b><br>
+      <div style="margin:8px 0 4px;font-weight:800;color:var(--blue)">🏠 Building_DB (Flats)</div>
+      <div style="font-size:11px;background:var(--gray-100);border-radius:7px;padding:8px 10px;font-family:monospace;line-height:1.9">
+        Block · Flat No. · Floor · Bedrooms · Furnishing · Parking · Balcony · Rent (₹) · Maintenance (₹) · Status · Notes
+      </div>
+      <div style="margin:10px 0 4px;font-weight:800;color:var(--green)">👤 Tenant_DB (Tenants)</div>
+      <div style="font-size:11px;background:var(--gray-100);border-radius:7px;padding:8px 10px;font-family:monospace;line-height:1.9">
+        Block · Flat · Name · Phone · Email · Persons · Rent (₹) · Deposit (₹) · Move-In · Agreement Duration · Agreement End · Notice Period · Remarks
+      </div>
+      <div style="margin:10px 0 4px;font-weight:800;color:var(--amber)">💰 Billing (Billing records)</div>
+      <div style="font-size:11px;background:var(--gray-100);border-radius:7px;padding:8px 10px;font-family:monospace;line-height:1.9">
+        Month · Block · Flat · Rent Due · Rent Paid · Rent Status · Water Units · Water Rate · Water Amt · Elec Units · Elec Amt · Elec Status · Total · Account · Date · Notes
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:var(--gray-500)">
+        ⚠️ Import adds new records — it does <b>not</b> delete existing data. Duplicate flat+month billing entries will be skipped.
+      </div>
+    </div>
+    <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="closeModal();document.getElementById('import-file').click()">📥 Choose File to Import</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:8px" onclick="downloadImportTemplate()">⬇️ Download Blank Template</button>
+  `);
+}
+
+async function downloadImportTemplate(){
+  const wb=XLSX.utils.book_new();
+  const ws1=XLSX.utils.aoa_to_sheet([['Block','Flat No.','Floor','Bedrooms','Furnishing','Parking','Balcony','Rent (₹)','Maintenance (₹)','Status','Notes'],
+    ['Block A','A-101','Ground','2 BHK','Semi Furnished','Yes','Yes',15000,500,'Occupied',''],
+    ['Block A','A-102','First','1 BHK','Unfurnished','No','Yes',10000,0,'Vacant','']]);
+  XLSX.utils.book_append_sheet(wb,ws1,'Building_DB');
+  const ws2=XLSX.utils.aoa_to_sheet([['Block','Flat','Name','Phone','Email','Persons','Rent (₹)','Deposit (₹)','Move-In','Agreement Duration','Agreement End','Notice Period','Remarks'],
+    ['Block A','A-101','Rajesh Kumar','+91 98765 43210','rajesh@email.com',2,15000,30000,'2024-01-01','11 months','2024-11-30','30 days','Good tenant']]);
+  XLSX.utils.book_append_sheet(wb,ws2,'Tenant_DB');
+  const ws3=XLSX.utils.aoa_to_sheet([['Month','Block','Flat','Rent Due','Rent Paid','Rent Status','Water Units','Water Rate','Water Amt','Elec Units','Elec Amt','Elec Status','Total','Account','Date','Notes'],
+    ['2024-01','Block A','A-101',15000,15000,'Paid',10,0.1,1,50,500,'Paid',15501,'UPI / GPay','2024-01-05','']]);
+  XLSX.utils.book_append_sheet(wb,ws3,'Billing');
+  XLSX.writeFile(wb,'TMS_Import_Template.xlsx');
+  toast('✅ Template downloaded!');
+}
+
+async function handleImportFile(input){
+  const file=input.files[0];
+  if(!file){return}
+  input.value=''; // reset so same file can be re-imported if needed
+  toast('⏳ Reading file…');
+  const reader=new FileReader();
+  reader.onload=async(e)=>{
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array',cellDates:true});
+      await runImport(wb);
+    }catch(err){
+      toast('❌ Could not read file: '+err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function xlsxSheetToObjects(wb, sheetName){
+  const ws=wb.Sheets[wb.SheetNames.find(n=>n.toLowerCase()===sheetName.toLowerCase())||sheetName];
+  if(!ws) return null;
+  return XLSX.utils.sheet_to_json(ws,{defval:''});
+}
+
+async function runImport(wb){
+  const sheetNames=wb.SheetNames.map(s=>s.toLowerCase());
+  let flatCount=0,tenantCount=0,billCount=0,skipped=0;
+  const errors=[];
+
+  // ── FLATS ──
+  const flatSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('building')||s.includes('flat'))||'Building_DB');
+  const existingFlats=await ga('flats');
+
+  if(flatSheet&&flatSheet.length>0){
+    for(const row of flatSheet){
+      const block=String(row['Block']||'').trim();
+      const flatNo=String(row['Flat No.']||row['Flat']||'').trim();
+      if(!block||!flatNo){skipped++;continue}
+      // Skip if exact flat already exists
+      if(existingFlats.find(f=>f.block===block&&f.flatNo===flatNo)){skipped++;continue}
+      await add('flats',{
+        block, flatNo,
+        floor:String(row['Floor']||'Ground'),
+        bedrooms:String(row['Bedrooms']||'2 BHK'),
+        furnishing:String(row['Furnishing']||'Unfurnished'),
+        parking:String(row['Parking']||'No'),
+        balcony:String(row['Balcony']||'No'),
+        rent:parseFloat(row['Rent (₹)']||row['Rent']||0),
+        maintenance:parseFloat(row['Maintenance (₹)']||row['Maintenance']||0),
+        status:String(row['Status']||'Vacant'),
+        notes:String(row['Notes']||''),
+        createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()
+      });
+      flatCount++;
+    }
+  }
+
+  // ── TENANTS ──
+  const tenantSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('tenant'))||'Tenant_DB');
+  const allFlatsNow=await ga('flats'); // refreshed after flat import
+  if(tenantSheet&&tenantSheet.length>0){
+    for(const row of tenantSheet){
+      const block=String(row['Block']||'').trim();
+      const flatNo=String(row['Flat']||row['Flat No.']||'').trim();
+      const name=String(row['Name']||'').trim();
+      if(!name){skipped++;continue}
+      const fl=allFlatsNow.find(f=>f.block===block&&f.flatNo===flatNo);
+      if(!fl){errors.push(`Tenant "${name}": flat ${block}-${flatNo} not found`);skipped++;continue}
+      // Skip if tenant already linked to this flat
+      const allTenants=await ga('tenants');
+      if(allTenants.find(t=>t.flatId===fl.id&&t.name===name)){skipped++;continue}
+      await add('tenants',{
+        flatId:fl.id, name,
+        phone:String(row['Phone']||''),
+        email:String(row['Email']||''),
+        persons:parseInt(row['Persons']||0)||0,
+        rent:parseFloat(row['Rent (₹)']||row['Rent']||0),
+        deposit:parseFloat(row['Deposit (₹)']||row['Deposit']||0),
+        moveIn:_fmtDate(row['Move-In']),
+        agreementDur:String(row['Agreement Duration']||'11 months'),
+        agreementEnd:_fmtDate(row['Agreement End']),
+        noticePeriod:String(row['Notice Period']||'30 days'),
+        remarks:String(row['Remarks']||''),
+        createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()
+      });
+      // Auto-mark flat occupied
+      if(fl.status!=='Occupied') await put('flats',{...fl,status:'Occupied',updatedAt:new Date().toISOString()});
+      tenantCount++;
+    }
+  }
+
+  // ── BILLING ──
+  const billSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('bill'))||'Billing');
+  const allFlats2=await ga('flats');
+  const allBillsNow=await ga('billing');
+  if(billSheet&&billSheet.length>0){
+    for(const row of billSheet){
+      const block=String(row['Block']||'').trim();
+      const flatNo=String(row['Flat']||row['Flat No.']||'').trim();
+      const month=String(row['Month']||'').trim();
+      if(!month){skipped++;continue}
+      const fl=allFlats2.find(f=>f.block===block&&f.flatNo===flatNo);
+      if(!fl){skipped++;continue}
+      // Skip duplicates
+      if(allBillsNow.find(b=>b.flatId===fl.id&&b.month===month)){skipped++;continue}
+      await add('billing',{
+        flatId:fl.id, month,
+        rentDue:parseFloat(row['Rent Due']||0),
+        rentPaid:parseFloat(row['Rent Paid']||0),
+        rentStatus:String(row['Rent Status']||'Pending'),
+        waterUnits:parseFloat(row['Water Units']||0),
+        waterRate:parseFloat(row['Water Rate']||0.10),
+        waterAmount:parseFloat(row['Water Amt']||0),
+        elecUnits:parseFloat(row['Elec Units']||0),
+        elecAmount:parseFloat(row['Elec Amt']||0),
+        elecStatus:String(row['Elec Status']||'Pending'),
+        total:parseFloat(row['Total']||0),
+        account:String(row['Account']||''),
+        paidDate:_fmtDate(row['Date']),
+        notes:String(row['Notes']||''),
+        createdAt:new Date().toISOString()
+      });
+      billCount++;
+    }
+  }
+
+  // ── Result ──
+  const total=flatCount+tenantCount+billCount;
+  if(total===0&&skipped===0&&errors.length===0){
+    openModal('📥 Import Result',`<div class="empty"><div class="eico">🤔</div><div class="etitle">Nothing to import</div><div class="esub">No recognised sheets found. Check the Import Guide for column names.</div></div>`);
+    return;
+  }
+
+  openModal('✅ Import Complete',`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:14px">
+      <div class="scard"><div class="snum" style="color:var(--blue)">${flatCount}</div><div class="slbl">Flats</div></div>
+      <div class="scard"><div class="snum" style="color:var(--green)">${tenantCount}</div><div class="slbl">Tenants</div></div>
+      <div class="scard"><div class="snum" style="color:var(--amber)">${billCount}</div><div class="slbl">Bills</div></div>
+    </div>
+    ${skipped>0?`<div style="background:var(--amber-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--amber);font-weight:700;margin-bottom:10px">⏭ ${skipped} row(s) skipped (duplicates or missing required fields)</div>`:''}
+    ${errors.length>0?`<div style="background:var(--red-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--red);margin-bottom:10px"><b>⚠️ ${errors.length} issue(s):</b><br>${errors.slice(0,5).map(e=>`· ${esc(e)}`).join('<br>')}${errors.length>5?`<br>… and ${errors.length-5} more`:''}</div>`:''}
+    <div style="font-size:12px;color:var(--gray-500);margin-top:4px">Existing records were not modified. Only new entries were added.</div>
+    <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="closeModal();renderDash()">✅ Done</button>
+  `);
+  refresh();
+}
+
+function _fmtDate(val){
+  if(!val) return '';
+  if(val instanceof Date) return val.toISOString().split('T')[0];
+  const s=String(val).trim();
+  // Handle Excel serial numbers
+  if(/^\d{5}$/.test(s)){
+    const d=XLSX.SSF.parse_date_code(parseInt(s));
+    if(d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  return s;
 }
 
 // ═══════════════════════════════════════════
