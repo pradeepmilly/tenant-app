@@ -495,6 +495,10 @@ async function renderDash(){
     ${overdueBills.length>0?`<div class="sh"><span class="st">⚠ Overdue / Pending Rents</span></div>${over2.join('')}${overdueBills.length>5?`<div style="text-align:center;font-size:12px;color:var(--gray-400);padding:4px">+${overdueBills.length-5} more — check Billing tab</div>`:''}`:''}
     ${expiring.length>0?`<div class="sh" style="margin-top:${overdueBills.length>0?12:0}px"><span class="st">📅 Agreement Expirations</span></div>${exp2.join('')}`:''}
     ${total===0?`<div class="empty"><div class="eico">🏗</div><div class="etitle">Welcome to TMS!</div><div class="esub">Start by adding your buildings & flats</div></div>`:''}
+    <div style="text-align:center;padding:20px 0 6px;font-size:11px;color:var(--gray-400)">
+      Built by <span style="font-weight:800;color:var(--blue)">⚡ ASAP Automations</span><br>
+      <span style="font-size:10px">Tenant Management System v2.0</span>
+    </div>
   `;
 }
 
