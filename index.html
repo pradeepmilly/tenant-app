@@ -23,6 +23,42 @@
 html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray-50);color:var(--gray-900)}
 body{display:flex;flex-direction:column;overflow:hidden}
 
+/* ── Dark Mode ── */
+body.dark{
+  --primary:#0f2744;--blue:#3b82f6;--blue-lt:#1e3a5c;
+  --green:#22c55e;--green-lt:#14532d;
+  --amber:#f59e0b;--amber-lt:#451a03;
+  --red:#ef4444;--red-lt:#450a0a;
+  --teal:#2dd4bf;--teal-lt:#042f2e;
+  --purple:#a78bfa;--purple-lt:#2e1065;
+  --gray-50:#0f172a;--gray-100:#1e293b;--gray-200:#334155;--gray-300:#475569;
+  --gray-400:#64748b;--gray-500:#94a3b8;--gray-600:#cbd5e1;--gray-700:#e2e8f0;
+  --gray-800:#f1f5f9;--gray-900:#f8fafc;
+}
+body.dark .card,body.dark #bnav,body.dark .mnav,body.dark .scard,
+body.dark .mcard,body.dark .setting-item,body.dark .acct-card{background:#1e293b;border-color:#334155}
+body.dark .srch input,body.dark .fc,body.dark .chip{background:#1e293b;color:#f1f5f9;border-color:#334155}
+body.dark .msh,body.dark .cbox{background:#1e293b}
+body.dark #hdr{background:#0f2744}
+body.dark #bldg-bar{background:#0a1929}
+body.dark .btn-ghost{background:#334155;color:#e2e8f0}
+body.dark .btn-outline{background:#1e293b;border-color:#3b82f6;color:#3b82f6}
+body.dark #toast{background:#f1f5f9;color:#0f172a}
+
+/* ── PIN Lock ── */
+#pin-lock{position:fixed;inset:0;background:#0f2744;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white}
+#pin-lock.hidden{display:none}
+.pin-title{font-size:22px;font-weight:900;margin-bottom:6px}
+.pin-sub{font-size:13px;opacity:.6;margin-bottom:28px}
+.pin-dots{display:flex;gap:14px;margin-bottom:28px}
+.pin-dot{width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.25);transition:background .15s}
+.pin-dot.filled{background:white}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:220px}
+.pin-btn{background:rgba(255,255,255,.1);border:none;color:white;font-size:22px;font-weight:700;height:60px;border-radius:14px;cursor:pointer;font-family:inherit;transition:background .15s}
+.pin-btn:active{background:rgba(255,255,255,.3)}
+.pin-error{font-size:13px;color:#fca5a5;margin-top:12px;min-height:18px}
+.pin-forgot{font-size:12px;opacity:.5;margin-top:16px;cursor:pointer;text-decoration:underline}
+
 /* Header */
 #hdr{background:var(--primary);color:white;padding:max(14px,env(safe-area-inset-top)) 16px 12px;
   display:flex;align-items:center;justify-content:space-between;flex-shrink:0;box-shadow:var(--sh2)}
@@ -257,6 +293,7 @@ textarea.fc{resize:vertical;min-height:72px}
   </div>
   <div class="hbtns">
     <button class="hbtn" onclick="openBuildingPicker()" title="Switch Building" id="bldg-btn">🏗</button>
+    <button class="hbtn" onclick="toggleDarkMode()" title="Dark Mode" id="dark-btn">🌙</button>
     <button class="hbtn" onclick="exportExcel()" title="Export Excel">📊</button>
   </div>
 </div>
@@ -322,6 +359,25 @@ textarea.fc{resize:vertical;min-height:72px}
       <div class="mcard" onclick="showReport('outstanding')"><div class="mico">⚠️</div><div class="mtxt">Outstanding</div><div class="msub">Flat-wise dues</div></div>
       <div class="mcard" onclick="showReport('allmonths')"><div class="mico">📈</div><div class="mtxt">All Months</div><div class="msub">Month-by-month summary</div></div>
       <div class="mcard" onclick="showReport('accounts')"><div class="mico">🏦</div><div class="mtxt">Account-wise</div><div class="msub">Collection by bank</div></div>
+      <div class="mcard" onclick="showReport('netincome')" style="border:2px solid var(--green)"><div class="mico">💹</div><div class="mtxt">Net Income</div><div class="msub">Rent − Expenses per building</div></div>
+      <div class="mcard" onclick="showReport('annual')"><div class="mico">📅</div><div class="mtxt">Annual P&amp;L</div><div class="msub">Full year summary</div></div>
+    </div>
+    <div class="sh" style="margin-top:16px"><span class="st">Tenants</span></div>
+    <div class="more-grid">
+      <div class="mcard" onclick="openMoveOutWizard()"><div class="mico">🚪</div><div class="mtxt">Move-Out</div><div class="msub">Vacate & deposit refund</div></div>
+      <div class="mcard" onclick="viewMoveOutHistory()"><div class="mico">📜</div><div class="mtxt">Move-Out History</div><div class="msub">Past tenants & refunds</div></div>
+    </div>
+    <div class="sh" style="margin-top:16px"><span class="st">Maintenance</span></div>
+    <div class="more-grid">
+      <div class="mcard" onclick="openAddMaintenance()"><div class="mico">🔧</div><div class="mtxt">Log Request</div><div class="msub">Repair / complaint</div></div>
+      <div class="mcard" onclick="viewMaintenance()"><div class="mico">📋</div><div class="mtxt">All Requests</div><div class="msub" id="maint-badge-sub">View & update status</div></div>
+    </div>
+    <div class="sh" style="margin-top:16px"><span class="st">Building Expenses</span></div>
+    <div class="more-grid">
+      <div class="mcard" onclick="openAddExpense()"><div class="mico">➕</div><div class="mtxt">Add Expense</div><div class="msub">Log a building expense</div></div>
+      <div class="mcard" onclick="viewExpenses()"><div class="mico">📋</div><div class="mtxt">Monthly Summary</div><div class="msub">All expenses by month</div></div>
+      <div class="mcard" onclick="showReport('expenses')"><div class="mico">📊</div><div class="mtxt">Expense Report</div><div class="msub">Category-wise analysis</div></div>
+      <div class="mcard" onclick="exportExpensesExcel()"><div class="mico">📥</div><div class="mtxt">Export Expenses</div><div class="msub">Download as Excel</div></div>
     </div>
     <div class="sh" style="margin-top:16px"><span class="st">Water Meter</span></div>
     <div class="more-grid">
@@ -333,7 +389,10 @@ textarea.fc{resize:vertical;min-height:72px}
     <div class="sh" style="margin-top:16px"><span class="st">Settings & Data</span></div>
     <div class="more-grid">
       <div class="mcard" onclick="openSettings()"><div class="mico">⚙️</div><div class="mtxt">Settings</div><div class="msub">Society, WA, accounts</div></div>
+      <div class="mcard" onclick="openPinSettings()"><div class="mico">🔐</div><div class="mtxt">App Lock</div><div class="msub">PIN protection</div></div>
+      <div class="mcard" onclick="openNotificationSettings()"><div class="mico">🔔</div><div class="mtxt">Notifications</div><div class="msub">Reminders & alerts</div></div>
       <div class="mcard" onclick="openBackupSettings()"><div class="mico">💾</div><div class="mtxt">Backup & Restore</div><div class="msub">Schedule, export, import</div></div>
+      <div class="mcard" onclick="openDriveBackupSettings()"><div class="mico">☁️</div><div class="mtxt">Drive Backup</div><div class="msub">Google Drive sync</div></div>
       <div class="mcard" onclick="exportExcel()"><div class="mico">📊</div><div class="mtxt">Export Excel</div><div class="msub">Download all data</div></div>
       <div class="mcard" onclick="document.getElementById('import-file').click()"><div class="mico">📥</div><div class="mtxt">Import Excel</div><div class="msub">Flats, tenants, billing</div></div>
       <div class="mcard" onclick="showImportGuide()"><div class="mico">📋</div><div class="mtxt">Import Guide</div><div class="msub">Column format & template</div></div>
@@ -376,12 +435,38 @@ textarea.fc{resize:vertical;min-height:72px}
 
 <div id="toast"></div>
 
+<!-- PIN Lock Screen -->
+<div id="pin-lock" class="hidden">
+  <div class="pin-title">🔐 TMS Locked</div>
+  <div class="pin-sub" id="pin-sub">Enter your PIN to continue</div>
+  <div class="pin-dots" id="pin-dots">
+    <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
+    <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
+  </div>
+  <div class="pin-pad">
+    <button class="pin-btn" onclick="pinKey('1')">1</button>
+    <button class="pin-btn" onclick="pinKey('2')">2</button>
+    <button class="pin-btn" onclick="pinKey('3')">3</button>
+    <button class="pin-btn" onclick="pinKey('4')">4</button>
+    <button class="pin-btn" onclick="pinKey('5')">5</button>
+    <button class="pin-btn" onclick="pinKey('6')">6</button>
+    <button class="pin-btn" onclick="pinKey('7')">7</button>
+    <button class="pin-btn" onclick="pinKey('8')">8</button>
+    <button class="pin-btn" onclick="pinKey('9')">9</button>
+    <button class="pin-btn" onclick="pinKey('')" style="opacity:.5">⚙️</button>
+    <button class="pin-btn" onclick="pinKey('0')">0</button>
+    <button class="pin-btn" onclick="pinBackspace()">⌫</button>
+  </div>
+  <div class="pin-error" id="pin-error"></div>
+  <div class="pin-forgot" onclick="pinForgot()">Forgot PIN?</div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════
 // DB
 // ═══════════════════════════════════════════
 let db;
-const DB_VERSION = 4;
+const DB_VERSION = 6;
 
 function initDB(){
   return new Promise((res,rej)=>{
@@ -409,6 +494,25 @@ function initDB(){
         const s=d.createObjectStore('waterReadings',{keyPath:'id',autoIncrement:true});
         s.createIndex('flatId','flatId',{unique:false});
         s.createIndex('month','month',{unique:false});
+      }
+      if(!d.objectStoreNames.contains('expenses')){
+        const s=d.createObjectStore('expenses',{keyPath:'id',autoIncrement:true});
+        s.createIndex('building','building',{unique:false});
+        s.createIndex('month','month',{unique:false});
+        s.createIndex('category','category',{unique:false});
+      }
+      if(!d.objectStoreNames.contains('maintenance')){
+        const s=d.createObjectStore('maintenance',{keyPath:'id',autoIncrement:true});
+        s.createIndex('flatId','flatId',{unique:false});
+        s.createIndex('status','status',{unique:false});
+      }
+      if(!d.objectStoreNames.contains('payments')){
+        const s=d.createObjectStore('payments',{keyPath:'id',autoIncrement:true});
+        s.createIndex('billId','billId',{unique:false});
+        s.createIndex('flatId','flatId',{unique:false});
+      }
+      if(!d.objectStoreNames.contains('moveouts')){
+        d.createObjectStore('moveouts',{keyPath:'id',autoIncrement:true});
       }
     };
     r.onsuccess=e=>{db=e.target.result;res()};
@@ -630,6 +734,12 @@ async function renderDash(){
   // Overdue
   const overdueBills=scopedBills.filter(b=>['Pending','Overdue'].includes(b.rentStatus));
 
+  // Expenses for current month
+  const allExpenses=await ga('expenses');
+  const mkExp=monthKey();
+  const monthExpenses=allExpenses.filter(e=>e.month===mkExp&&(activeBuilding==='All'||e.building===activeBuilding));
+  const totalExpenses=monthExpenses.reduce((s,e)=>s+e.amount,0);
+
   // Update nav badge
   const bb=document.getElementById('b-badge');
   bb.textContent=pending.length;
@@ -673,6 +783,26 @@ async function renderDash(){
     </div>
     ${overdueBills.length>0?`<div class="sh"><span class="st">⚠ Overdue / Pending Rents</span></div>${over2.join('')}${overdueBills.length>5?`<div style="text-align:center;font-size:12px;color:var(--gray-400);padding:4px">+${overdueBills.length-5} more — check Billing tab</div>`:''}`:''}
     ${expiring.length>0?`<div class="sh" style="margin-top:${overdueBills.length>0?12:0}px"><span class="st">📅 Agreement Expirations</span></div>${exp2.join('')}`:''}
+    ${monthExpenses.length>0?`
+    <div class="sh" style="margin-top:12px">
+      <span class="st">🧾 Expenses — ${monthLabel()}</span>
+      <button class="btn btn-sm btn-ghost" style="font-size:11px" onclick="viewExpenses()">View All ›</button>
+    </div>
+    <div class="card"><div class="cb">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:var(--red)">₹${totalExpenses.toLocaleString('en-IN')} spent</span>
+        <span style="font-size:11px;color:var(--gray-400)">${monthExpenses.length} entries</span>
+      </div>
+      ${[...new Set(monthExpenses.map(e=>e.category))].slice(0,5).map(cat=>{
+        const amt=monthExpenses.filter(e=>e.category===cat).reduce((s,e)=>s+e.amount,0);
+        const m=getCatMeta(cat);
+        return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--gray-100)">
+          <span style="font-size:15px">${m.icon}</span>
+          <span style="font-size:12px;flex:1;color:var(--gray-700)">${esc(cat)}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--red)">₹${amt.toLocaleString('en-IN')}</span>
+        </div>`;
+      }).join('')}
+    </div></div>`:''}
     ${total===0?`<div class="empty"><div class="eico">🏗</div><div class="etitle">${activeBuilding==='All'?'Welcome to TMS!':'No flats in '+activeBuilding}</div><div class="esub">${activeBuilding==='All'?'Start by adding your buildings & flats':'Try selecting a different building'}</div></div>`:''}
     <div style="text-align:center;padding:20px 0 6px;font-size:11px;color:var(--gray-400)">
       Built by <span style="font-weight:800;color:var(--blue)">⚡ ASAP Automations</span><br>
@@ -1224,11 +1354,12 @@ async function renderBilling(){
         ${bill.elecAmount?`<span style="display:inline-flex;align-items:center;gap:3px;background:${bill.elecStatus==='Paid'?'var(--amber-lt)':'var(--gray-100)'};padding:3px 7px;border-radius:20px;color:${bill.elecStatus==='Paid'?'var(--amber)':'var(--gray-500)'}">⚡ ₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')} ${bill.elecStatus==='Paid'?'✓':'⏳'}</span>`:''}
       </div>`:''}
       <div class="cact">
-        ${!isPaid?`<button class="btn btn-sm btn-green" onclick="quickPaid(${fl.id},${fl.rent},'${mk}',${bill?.id||'null'})">✓ Mark Rent Paid</button>`:''}
+        ${!isPaid?`<button class="btn btn-sm btn-green" onclick="quickPaid(${fl.id},${fl.rent},'${mk}',${bill?.id||'null'})">✓ Mark Paid</button>`:''}
+        ${!isPaid&&bill?`<button class="btn btn-sm btn-ghost" onclick="openPartialPayment(${bill.id})">⊹ Partial</button>`:''}
         ${bill&&bill.waterAmount&&bill.waterStatus!=='Paid'?`<button class="btn btn-sm btn-teal" onclick="quickPayUtil(${bill.id},'water')">💧 Pay Water</button>`:''}
         ${bill&&bill.elecAmount&&bill.elecStatus!=='Paid'?`<button class="btn btn-sm btn-amber" onclick="quickPayUtil(${bill.id},'elec')">⚡ Pay Elec</button>`:''}
-        ${bill?`<button class="btn btn-sm btn-outline" onclick="editBill(${bill.id})">✏️ Edit</button>`:
-          `<button class="btn btn-sm btn-amber" onclick="openBillForm(${fl.id})">+ Add Entry</button>`}
+        ${bill?`<button class="btn btn-sm btn-outline" onclick="editBill(${bill.id})">✏️ Edit</button>`:`<button class="btn btn-sm btn-amber" onclick="openBillForm(${fl.id})">+ Add Entry</button>`}
+        ${isPaid&&bill?`<button class="btn btn-sm btn-ghost" style="color:var(--green)" onclick="generateReceipt(${bill.id},${fl.id})">🧾 Receipt</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -1455,9 +1586,17 @@ async function pullWaterReading(flatId){
       if(wuEl) wuEl.value=0;
       if(waEl) waEl.value=0;
     }
-    if(warnEl) warnEl.innerHTML=`<div style="background:var(--gray-100);border-radius:8px;padding:7px 11px;font-size:11px;color:var(--gray-500);margin-bottom:8px">
-      💧 No water meter reading found for ${month} — enter manually or <span style="color:var(--teal);font-weight:700;cursor:pointer" onclick="closeModal();openWaterMeter()">take readings first</span>
-    </div>`;
+    // Only show the "not found" notice if this flat has had water readings before
+    // (i.e. water tracking is actually being used) — avoids confusing first-time users
+    const hasPriorReading = allReadings.some(r=>r.flatId===flatId);
+    if(warnEl){
+      warnEl.innerHTML = hasPriorReading
+        ? `<div style="background:var(--gray-100);border-radius:8px;padding:7px 11px;font-size:11px;color:var(--gray-500);margin-bottom:8px">
+            💧 No water reading for <b>${month}</b> — enter units manually or
+            <span style="color:var(--teal);font-weight:700;cursor:pointer" onclick="closeModal();openWaterMeter()">take readings first</span>
+           </div>`
+        : ''; // no message if water tracking not set up yet for this flat
+    }
   }
 }
 
@@ -1976,6 +2115,123 @@ async function showReport(type){
     </table></div>`:''}`;
   }
 
+  if(type==='expenses'){
+    const r=await renderExpenseReport();
+    title=r.title;html=r.html;
+  }
+  if(type==='annual'){
+    const r=await renderAnnualPL();
+    title=r.title;html=r.html;
+  }
+
+  if(type==='netincome'){
+    title='💹 Net Income Report';
+    const allFlats    = await ga('flats');
+    const allBills    = await ga('billing');
+    const allExpenses = await ga('expenses');
+
+    // All buildings in scope
+    const buildings = [...new Set(allFlats.map(f=>f.block))].sort();
+    const scopedBldgs = activeBuilding==='All'?buildings:[activeBuilding];
+
+    // All months that have any billing or expense data
+    const allMonths = [...new Set([
+      ...allBills.map(b=>b.month),
+      ...allExpenses.map(e=>e.month)
+    ].filter(Boolean))].sort().reverse();
+
+    if(!allMonths.length){
+      html='<div class="empty"><div class="eico">💹</div><div class="etitle">No data yet</div><div class="esub">Add billing entries and expenses first</div></div>';
+    } else {
+      const selectedMonth = allMonths[0]; // default to latest
+
+      // Build per-month, per-building P&L
+      function buildPL(month){
+        return scopedBldgs.map(bldg=>{
+          const bldgFlats    = allFlats.filter(f=>f.block===bldg);
+          const bldgFlatIds  = new Set(bldgFlats.map(f=>f.id));
+          const bldgBills    = allBills.filter(b=>b.month===month&&bldgFlatIds.has(b.flatId));
+          const bldgExpenses = allExpenses.filter(e=>e.month===month&&e.building===bldg);
+
+          const rentCollected   = bldgBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0);
+          const waterCollected  = bldgBills.reduce((s,b)=>s+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0),0);
+          const elecCollected   = bldgBills.reduce((s,b)=>s+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0),0);
+          const totalCollected  = rentCollected+waterCollected+elecCollected;
+          const totalExpenses   = bldgExpenses.reduce((s,e)=>s+e.amount,0);
+          const netIncome       = totalCollected-totalExpenses;
+          const paidFlats       = bldgBills.filter(b=>b.rentStatus==='Paid').length;
+          const occFlats        = bldgFlats.filter(f=>f.status==='Occupied').length;
+
+          // Expense breakdown by category
+          const expByCat={};
+          for(const e of bldgExpenses){
+            if(!expByCat[e.category]) expByCat[e.category]=0;
+            expByCat[e.category]+=e.amount;
+          }
+
+          return{bldg,rentCollected,waterCollected,elecCollected,totalCollected,totalExpenses,netIncome,paidFlats,occFlats,expByCat,expCount:bldgExpenses.length};
+        });
+      }
+
+      const monthOpts=allMonths.map(m=>`<option value="${m}" ${m===selectedMonth?'selected':''}>${MONTHS[parseInt(m.split('-')[1])-1]} ${m.split('-')[0]}</option>`).join('');
+
+      // Multi-month trend (last 6 months)
+      const last6=allMonths.slice(0,6).reverse();
+
+      html=`
+        <div class="fg" style="margin-bottom:14px">
+          <label class="fl">Select Month</label>
+          <select class="fc" id="ni-month" onchange="refreshNetIncome()">${monthOpts}</select>
+        </div>
+        <div id="ni-body"></div>
+        <div class="sh" style="margin-top:16px"><span class="st">📈 Trend — Last ${last6.length} Months</span></div>
+        <div class="rtable"><table>
+          <tr>
+            <th>Month</th>
+            ${scopedBldgs.map(b=>`<th colspan="3" style="text-align:center">${esc(b)}</th>`).join('')}
+            ${scopedBldgs.length>1?`<th colspan="3" style="text-align:center">All Buildings</th>`:''}
+          </tr>
+          <tr>
+            <th></th>
+            ${scopedBldgs.map(()=>`<th style="color:var(--green)">Income</th><th style="color:var(--red)">Expenses</th><th style="color:var(--blue)">Net</th>`).join('')}
+            ${scopedBldgs.length>1?`<th style="color:var(--green)">Income</th><th style="color:var(--red)">Expenses</th><th style="color:var(--blue)">Net</th>`:''}
+          </tr>
+          ${last6.map(mon=>{
+            const pl=buildPL(mon);
+            const totInc=pl.reduce((s,r)=>s+r.totalCollected,0);
+            const totExp=pl.reduce((s,r)=>s+r.totalExpenses,0);
+            const totNet=totInc-totExp;
+            return`<tr>
+              <td><b>${mon}</b></td>
+              ${pl.map(r=>`
+                <td style="color:var(--green)">₹${r.totalCollected.toLocaleString('en-IN')}</td>
+                <td style="color:var(--red)">₹${r.totalExpenses.toLocaleString('en-IN')}</td>
+                <td style="font-weight:800;color:${r.netIncome>=0?'var(--green)':'var(--red)'}">₹${r.netIncome.toLocaleString('en-IN')}</td>
+              `).join('')}
+              ${scopedBldgs.length>1?`
+                <td style="color:var(--green)">₹${totInc.toLocaleString('en-IN')}</td>
+                <td style="color:var(--red)">₹${totExp.toLocaleString('en-IN')}</td>
+                <td style="font-weight:800;color:${totNet>=0?'var(--green)':'var(--red)'}">₹${totNet.toLocaleString('en-IN')}</td>
+              `:''}
+            </tr>`;
+          }).join('')}
+        </table></div>
+        <div style="font-size:11px;color:var(--gray-400);margin-top:8px;text-align:center">Income = Rent paid + Water paid + Elec paid &nbsp;|&nbsp; Net = Income − Expenses</div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--gray-100);display:flex;gap:8px">
+          <button class="btn btn-primary btn-full" onclick="exportNetIncomePDF()">📄 Export as PDF</button>
+          <button class="btn btn-ghost" onclick="exportNetIncomeExcel()">📊 Excel</button>
+        </div>
+      `;
+
+      // Store buildPL for the interactive refresh
+      window._niPL = buildPL;
+      window._niScopedBldgs = scopedBldgs;
+
+      // Schedule initial render after modal opens
+      setTimeout(()=>refreshNetIncome(buildPL, scopedBldgs), 80);
+    }
+  }
+
   openModal(title,html||'<div class="empty"><div class="eico">📊</div><div class="etitle">No data yet</div></div>');
 }
 
@@ -2116,6 +2372,18 @@ async function exportExcel(){
   const ws3=XLSX.utils.json_to_sheet(bills.map(b=>{const fl=allFlats.find(f=>f.id===b.flatId);const ten=allTenants.find(t=>t.flatId===b.flatId);return{'Month':b.month,'Block':fl?.block||'','Flat':fl?.flatNo||'','Tenant':ten?.name||'','Rent Due':b.rentDue,'Rent Paid':b.rentPaid,'Rent Status':b.rentStatus,'Water Units':b.waterUnits,'Water Rate':b.waterRate,'Water Amt':b.waterAmount,'Elec Units':b.elecUnits,'Elec Amt':b.elecAmount,'Elec Status':b.elecStatus,'Total':b.total,'Account':b.account||'','Date':b.paidDate||'','Notes':b.notes||''}}));
   XLSX.utils.book_append_sheet(wb,ws3,'Billing');
 
+  // Expenses sheet
+  const allExpRaw=await ga('expenses');
+  const expScope=filterByBuilding(await ga('flats'));
+  const expBldgs=new Set(expScope.map(f=>f.block));
+  const expRows=(activeBuilding==='All'?allExpRaw:allExpRaw.filter(e=>expBldgs.has(e.building)))
+    .sort((a,b)=>b.month.localeCompare(a.month))
+    .map(e=>({'Month':e.month,'Building':e.building,'Category':e.category,'Amount (₹)':e.amount,
+      'Paid Date':e.paidDate||'','Account':e.account||'','Vendor':e.vendor||'','Notes':e.notes||''}));
+  const wsExp=XLSX.utils.json_to_sheet(expRows.length?expRows:[{'Month':'','Building':'','Category':'','Amount (₹)':'','Paid Date':'','Account':'','Vendor':'','Notes':''}]);
+  wsExp['!cols']=[{wch:10},{wch:14},{wch:24},{wch:14},{wch:12},{wch:20},{wch:20},{wch:30}];
+  XLSX.utils.book_append_sheet(wb,wsExp,'Expenses');
+
   // Settings sheet
   const settingsRows=[];
   for(const s of SETTING_KEYS) settingsRows.push({'Setting':s.label,'Key':s.key,'Value':await getSetting(s.key,s.default)});
@@ -2155,6 +2423,13 @@ function showImportGuide(){
       <div style="font-size:11px;background:var(--gray-100);border-radius:7px;padding:8px 10px;font-family:monospace;line-height:1.9">
         Month · Block · Flat No. · Previous Reading · Current Reading · Units Used · Rate (₹/unit) · Bill Amount (₹) · Reading Date · Notes
       </div>
+      <div style="margin:10px 0 4px;font-weight:800;color:var(--red)">🧾 Expenses (Building Expenses)</div>
+      <div style="font-size:11px;background:var(--gray-100);border-radius:7px;padding:8px 10px;font-family:monospace;line-height:1.9">
+        Month · Building · Category · Amount (₹) · Paid Date · Account · Vendor · Notes
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:var(--gray-500)">
+        Categories: Security Salary · Kaveri Water Bill · Borewell Water Bill · Garbage Collection · Lift Maintenance · Generator Fuel · Generator Maintenance · Cleaning · Common Area Electricity · Plumbing · Painting & Repairs · Other
+      </div>
       <div style="margin-top:12px;font-size:12px;color:var(--gray-500)">
         ⚠️ Import adds new records — it does <b>not</b> delete existing data. Duplicate flat+month entries will be skipped.<br>
         Month must be in <b>YYYY-MM</b> format (e.g. 2024-01). Dates in YYYY-MM-DD.
@@ -2181,6 +2456,15 @@ async function downloadImportTemplate(){
     ['2024-01','Block A','A-101',1200,1215,15,0.10,1.50,'2024-01-03',''],
     ['2024-01','Block A','A-102',980,1002,22,0.10,2.20,'2024-01-03','Meter slightly dirty']]);
   XLSX.utils.book_append_sheet(wb,ws4,'Water_Readings');
+  const ws5=XLSX.utils.aoa_to_sheet([
+    ['Month','Building','Category','Amount (₹)','Paid Date','Account','Vendor','Notes'],
+    ['2024-01','Block A','Security Salary',8000,'2024-01-01','Cash','Ramu Security','January salary'],
+    ['2024-01','Block A','Kaveri Water Bill',3500,'2024-01-05','UPI / GPay','BWSSB','Bill no. 12345'],
+    ['2024-01','Block A','Common Area Electricity',2200,'2024-01-07','UPI / GPay','BESCOM',''],
+    ['2024-01','Block A','Generator Fuel',1500,'2024-01-10','Cash','','15 litres'],
+    ['2024-01','Block A','Garbage Collection',600,'2024-01-01','Cash','BBMP',''],
+  ]);
+  XLSX.utils.book_append_sheet(wb,ws5,'Expenses');
   XLSX.writeFile(wb,'TMS_Import_Template.xlsx');
   toast('✅ Template downloaded!');
 }
@@ -2319,6 +2603,33 @@ async function runImport(wb){
     }
   }
 
+  // ── EXPENSES ──
+  let expenseCount=0;
+  const expSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('expense'))||'Expenses');
+  if(expSheet&&expSheet.length>0){
+    const validCats=new Set(DEFAULT_EXPENSE_CATEGORIES.map(c=>c.name));
+    for(const row of expSheet){
+      const building  = String(row['Building']||'').trim();
+      const month     = _fmtMonth(row['Month']);
+      const category  = String(row['Category']||'Other').trim();
+      const amount    = parseFloat(row['Amount (₹)']||row['Amount']||0);
+      if(!building||!month||!amount) {skipped++;continue}
+      // Use 'Other' if category not in our list
+      const cat = validCats.has(category)?category:'Other';
+      await add('expenses',{
+        building, month,
+        category:cat,
+        amount,
+        paidDate:_fmtDate(row['Paid Date']||row['Date']||''),
+        account:String(row['Account']||''),
+        vendor:String(row['Vendor']||''),
+        notes:String(row['Notes']||''),
+        createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
+      });
+      expenseCount++;
+    }
+  }
+
   // ── SETTINGS ──
   let settingsCount=0;
   const settingsSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('setting'))||'Settings');
@@ -2374,19 +2685,22 @@ async function runImport(wb){
   }
 
   // ── Result ──
-  const total=flatCount+tenantCount+billCount+waterCount+settingsCount;
+  const total=flatCount+tenantCount+billCount+waterCount+expenseCount+settingsCount;
   if(total===0&&skipped===0&&errors.length===0){
     openModal('📥 Import Result',`<div class="empty"><div class="eico">🤔</div><div class="etitle">Nothing to import</div><div class="esub">No recognised sheets found. Check the Import Guide for column names.</div></div>`);
     return;
   }
 
   openModal('✅ Import Complete',`
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px">
-      <div class="scard"><div class="snum" style="color:var(--blue);font-size:18px">${flatCount}</div><div class="slbl">Flats</div></div>
-      <div class="scard"><div class="snum" style="color:var(--green);font-size:18px">${tenantCount}</div><div class="slbl">Tenants</div></div>
-      <div class="scard"><div class="snum" style="color:var(--amber);font-size:18px">${billCount}</div><div class="slbl">Bills</div></div>
-      <div class="scard"><div class="snum" style="color:var(--teal);font-size:18px">${waterCount}</div><div class="slbl">Water</div></div>
-      <div class="scard"><div class="snum" style="color:var(--purple);font-size:18px">${settingsCount}</div><div class="slbl">Settings</div></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px">
+      <div class="scard"><div class="snum" style="color:var(--blue)">${flatCount}</div><div class="slbl">Flats</div></div>
+      <div class="scard"><div class="snum" style="color:var(--green)">${tenantCount}</div><div class="slbl">Tenants</div></div>
+      <div class="scard"><div class="snum" style="color:var(--amber)">${billCount}</div><div class="slbl">Bills</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:14px">
+      <div class="scard"><div class="snum" style="color:var(--teal)">${waterCount}</div><div class="slbl">Water</div></div>
+      <div class="scard"><div class="snum" style="color:var(--red)">${expenseCount}</div><div class="slbl">Expenses</div></div>
+      <div class="scard"><div class="snum" style="color:var(--purple)">${settingsCount}</div><div class="slbl">Settings</div></div>
     </div>
     ${skipped>0?`<div style="background:var(--amber-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--amber);font-weight:700;margin-bottom:10px">⏭ ${skipped} row(s) skipped (already exist or missing required fields)</div>`:''}
     ${errors.length>0?`<div style="background:var(--red-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--red);margin-bottom:10px">
@@ -2861,6 +3175,587 @@ function getPrevMonthKey(monthKey){
   return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
+// ── Net Income PDF Export ────────────────────────────────────────────────────
+async function exportNetIncomePDF(){
+  const month   = document.getElementById('ni-month')?.value || monthKey();
+  const buildPL = window._niPL;
+  const scopedBldgs = window._niScopedBldgs || [];
+  if(!buildPL){ toast('⚠️ Open the Net Income report first'); return; }
+
+  const society  = await getSetting('society','Society Management');
+  const pl       = buildPL(month);
+  const grandInc = pl.reduce((s,r)=>s+r.totalCollected,0);
+  const grandExp = pl.reduce((s,r)=>s+r.totalExpenses,0);
+  const grandNet = grandInc-grandExp;
+  const monthLabel2 = `${MONTHS[parseInt(month.split('-')[1])-1]} ${month.split('-')[0]}`;
+
+  // Trend data (last 6)
+  const allBills    = await ga('billing');
+  const allExpenses = await ga('expenses');
+  const allFlats2   = await ga('flats');
+  const allMonths   = [...new Set([...allBills.map(b=>b.month),...allExpenses.map(e=>e.month)].filter(Boolean))].sort().reverse();
+  const last6       = allMonths.slice(0,6).reverse();
+
+  function buildPLRaw(mon){
+    return scopedBldgs.map(bldg=>{
+      const bFlats  = allFlats2.filter(f=>f.block===bldg);
+      const bIds    = new Set(bFlats.map(f=>f.id));
+      const bBills  = allBills.filter(b=>b.month===mon&&bIds.has(b.flatId));
+      const bExp    = allExpenses.filter(e=>e.month===mon&&e.building===bldg);
+      const inc     = bBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0)
+                    + bBills.reduce((s,b)=>s+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0),0)
+                    + bBills.reduce((s,b)=>s+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0),0);
+      const exp     = bExp.reduce((s,e)=>s+e.amount,0);
+      return{bldg,inc,exp,net:inc-exp};
+    });
+  }
+
+  const fmt = n => '&#8377;'+n.toLocaleString('en-IN');
+  const clr = n => n>=0?'#166534':'#991b1b';
+
+  // Build per-building detail sections
+  const bldgSections = pl.map(r=>{
+    const catRows = Object.entries(r.expByCat).sort(([,a],[,b])=>b-a).map(([cat,amt])=>{
+      const m=getCatMeta(cat);
+      return`<tr><td>${m.icon} ${cat}</td><td style="text-align:right;color:#991b1b">−${fmt(amt)}</td></tr>`;
+    }).join('');
+
+    return`
+      <div class="bldg-block">
+        <div class="bldg-header" style="background:${r.netIncome>=0?'#166534':'#991b1b'}">
+          <span>🏗 ${r.bldg}</span>
+          <span class="net-big">${fmt(r.netIncome)}</span>
+          <span class="net-label">Net Income &nbsp;·&nbsp; ${r.paidFlats}/${r.occFlats} flats paid</span>
+        </div>
+        <div class="bldg-body">
+          <div class="two-col">
+            <div class="col-box green-box">
+              <div class="col-label">INCOME</div>
+              <div class="col-val">${fmt(r.totalCollected)}</div>
+              <div class="col-sub">Rent ${fmt(r.rentCollected)}${r.waterCollected?' + Water '+fmt(r.waterCollected):''}${r.elecCollected?' + Elec '+fmt(r.elecCollected):''}</div>
+            </div>
+            <div class="col-box red-box">
+              <div class="col-label">EXPENSES</div>
+              <div class="col-val">${fmt(r.totalExpenses)}</div>
+              <div class="col-sub">${r.expCount} item${r.expCount!==1?'s':''}</div>
+            </div>
+          </div>
+          ${catRows?`<table class="exp-table"><thead><tr><th>Category</th><th>Amount</th></tr></thead><tbody>${catRows}</tbody></table>`:'<p class="no-exp">No expenses logged</p>'}
+        </div>
+      </div>`;
+  }).join('');
+
+  // Trend table
+  const trendRows = last6.map(mon=>{
+    const tpl=buildPLRaw(mon);
+    const tInc=tpl.reduce((s,r)=>s+r.inc,0);
+    const tExp=tpl.reduce((s,r)=>s+r.exp,0);
+    const tNet=tInc-tExp;
+    return`<tr>
+      <td><b>${mon}</b></td>
+      ${tpl.map(r=>`<td style="color:#166534">${fmt(r.inc)}</td><td style="color:#991b1b">${fmt(r.exp)}</td><td style="font-weight:700;color:${clr(r.net)}">${fmt(r.net)}</td>`).join('')}
+      ${scopedBldgs.length>1?`<td style="color:#166534">${fmt(tInc)}</td><td style="color:#991b1b">${fmt(tExp)}</td><td style="font-weight:700;color:${clr(tNet)}">${fmt(tNet)}</td>`:''}
+    </tr>`;
+  }).join('');
+
+  const trendColSpan = scopedBldgs.length>1;
+  const trendHeader2 = scopedBldgs.map(b=>`<th colspan="3" style="text-align:center;border-bottom:2px solid #d1d5db">${b}</th>`).join('')
+    +(trendColSpan?`<th colspan="3" style="text-align:center;border-bottom:2px solid #d1d5db">All Buildings</th>`:'');
+  const trendHeader3 = (trendColSpan?scopedBldgs.length+1:scopedBldgs.length)
+    .toString().split('').map(()=>'<th style="color:#166534">Income</th><th style="color:#991b1b">Expenses</th><th>Net</th>').join('');
+
+  const now = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+
+  const html=`<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Net Income Report — ${monthLabel2} — ${society}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:13px;color:#111;background:white;padding:28px 32px}
+  .report-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;padding-bottom:14px;border-bottom:3px solid #1a3a5c}
+  .report-title{font-size:22px;font-weight:900;color:#1a3a5c}
+  .report-sub{font-size:13px;color:#4b5563;margin-top:3px}
+  .report-meta{text-align:right;font-size:11px;color:#6b7280}
+  .summary-row{display:flex;gap:12px;margin-bottom:22px}
+  .summary-card{flex:1;border:1.5px solid #e5e7eb;border-radius:8px;padding:12px;text-align:center}
+  .summary-val{font-size:20px;font-weight:900}
+  .summary-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6b7280;margin-top:3px}
+  .bldg-block{margin-bottom:20px;border:1.5px solid #e5e7eb;border-radius:8px;overflow:hidden;page-break-inside:avoid}
+  .bldg-header{color:white;padding:12px 16px}
+  .bldg-header span{display:block}
+  .net-big{font-size:22px;font-weight:900;margin-top:4px}
+  .net-label{font-size:11px;opacity:.8;margin-top:2px}
+  .bldg-body{padding:14px 16px}
+  .two-col{display:flex;gap:12px;margin-bottom:12px}
+  .col-box{flex:1;border-radius:6px;padding:10px;text-align:center}
+  .green-box{background:#f0fdf4;border:1px solid #bbf7d0}
+  .red-box{background:#fef2f2;border:1px solid #fecaca}
+  .col-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6b7280}
+  .col-val{font-size:16px;font-weight:900;margin-top:4px}
+  .green-box .col-val{color:#166534}.red-box .col-val{color:#991b1b}
+  .col-sub{font-size:10px;color:#6b7280;margin-top:3px}
+  .exp-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+  .exp-table th{background:#f3f4f6;padding:6px 9px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+  .exp-table td{padding:6px 9px;border-bottom:1px solid #f3f4f6}
+  .no-exp{font-size:12px;color:#9ca3af;text-align:center;padding:8px 0;font-style:italic}
+  .trend-section{margin-top:24px}
+  .section-title{font-size:13px;font-weight:800;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #e5e7eb}
+  .trend-table{width:100%;border-collapse:collapse;font-size:11px}
+  .trend-table th{background:#f3f4f6;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.3px;border-bottom:2px solid #d1d5db}
+  .trend-table td{padding:6px 8px;border-bottom:1px solid #f3f4f6}
+  .footer{margin-top:24px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:10px;color:#9ca3af;display:flex;justify-content:space-between}
+  @media print{
+    body{padding:16px 20px}
+    .bldg-block{page-break-inside:avoid}
+    @page{size:A4;margin:12mm 14mm}
+  }
+</style>
+</head><body>
+  <div class="report-header">
+    <div>
+      <div class="report-title">💹 Net Income Report</div>
+      <div class="report-sub">${society} &nbsp;·&nbsp; ${monthLabel2}${scopedBldgs.length===1?' &nbsp;·&nbsp; '+scopedBldgs[0]:''}</div>
+    </div>
+    <div class="report-meta">Generated: ${now}<br>${scopedBldgs.length} building${scopedBldgs.length!==1?'s':''}</div>
+  </div>
+
+  ${scopedBldgs.length>1?`
+  <div class="summary-row">
+    <div class="summary-card"><div class="summary-val" style="color:#166534">${fmt(grandInc)}</div><div class="summary-lbl">Total Income</div></div>
+    <div class="summary-card"><div class="summary-val" style="color:#991b1b">${fmt(grandExp)}</div><div class="summary-lbl">Total Expenses</div></div>
+    <div class="summary-card"><div class="summary-val" style="color:${clr(grandNet)}">${fmt(grandNet)}</div><div class="summary-lbl">Net Income</div></div>
+  </div>`:''}
+
+  ${bldgSections}
+
+  ${last6.length>1?`
+  <div class="trend-section">
+    <div class="section-title">📈 Trend — Last ${last6.length} Months</div>
+    <table class="trend-table">
+      <thead>
+        <tr><th rowspan="2">Month</th>${trendHeader2}</tr>
+        <tr>${Array(trendColSpan?scopedBldgs.length+1:scopedBldgs.length).fill('<th style="color:#166534">Income</th><th style="color:#991b1b">Expenses</th><th>Net</th>').join('')}</tr>
+      </thead>
+      <tbody>${trendRows}</tbody>
+    </table>
+  </div>`:''}
+
+  <div class="footer">
+    <span>⚡ ASAP Automations — Tenant Management System</span>
+    <span>Income = Rent + Water + Electricity collected &nbsp;|&nbsp; Net = Income − Expenses</span>
+  </div>
+  <div style="text-align:center;margin-top:20px;padding:12px">
+    <button onclick="window.print()" style="background:#1a3a5c;color:white;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">🖨️ Print / Save as PDF</button>
+  </div>
+</body></html>`;
+
+  const win=window.open('','_blank');
+  if(win){
+    win.document.write(html);
+    win.document.close();
+    // Auto-trigger print after page renders (called on parent window's handle)
+    setTimeout(()=>{ try{ win.focus(); win.print(); }catch(e){} }, 600);
+  }
+  else toast('⚠️ Allow popups to export PDF');
+}
+
+// ── Net Income Excel Export ──────────────────────────────────────────────────
+async function exportNetIncomeExcel(){
+  const month    = document.getElementById('ni-month')?.value || monthKey();
+  const buildPL  = window._niPL;
+  if(!buildPL){ toast('⚠️ Open the Net Income report first'); return; }
+
+  const pl       = buildPL(month);
+  const society  = await getSetting('society','Society Management');
+  const wb       = XLSX.utils.book_new();
+
+  // Summary sheet
+  const sumRows=[];
+  let grandInc=0,grandExp=0;
+  for(const r of pl){
+    sumRows.push({'Building':r.bldg,'Month':month,'Rent Collected':r.rentCollected,'Water Collected':r.waterCollected,
+      'Elec Collected':r.elecCollected,'Total Income':r.totalCollected,'Total Expenses':r.totalExpenses,
+      'Net Income':r.netIncome,'Paid Flats':r.paidFlats,'Occupied Flats':r.occFlats});
+    grandInc+=r.totalCollected; grandExp+=r.totalExpenses;
+  }
+  if(pl.length>1) sumRows.push({'Building':'TOTAL','Month':month,'Total Income':grandInc,'Total Expenses':grandExp,'Net Income':grandInc-grandExp});
+  const ws=XLSX.utils.json_to_sheet(sumRows);
+  ws['!cols']=[{wch:14},{wch:10},{wch:16},{wch:16},{wch:16},{wch:14},{wch:16},{wch:14},{wch:12},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws,'Summary');
+
+  // Expense detail
+  const allExpenses=await ga('expenses');
+  const expRows=[];
+  for(const r of pl){
+    const bExp=allExpenses.filter(e=>e.month===month&&e.building===r.bldg);
+    for(const e of bExp) expRows.push({'Building':e.building,'Month':e.month,'Category':e.category,'Amount':e.amount,'Account':e.account||'','Vendor':e.vendor||'','Notes':e.notes||''});
+  }
+  if(expRows.length){
+    const ws2=XLSX.utils.json_to_sheet(expRows);
+    XLSX.utils.book_append_sheet(wb,ws2,'Expense Detail');
+  }
+
+  XLSX.writeFile(wb,`Net_Income_${month}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast('✅ Excel downloaded!');
+}
+
+// ── Net Income Report detail renderer ───────────────────────────────────────
+function refreshNetIncome(plFn, bldgs){
+  const buildPL = plFn || window._niPL;
+  const scopedBldgs = bldgs || window._niScopedBldgs;
+  const month = document.getElementById('ni-month')?.value;
+  const el    = document.getElementById('ni-body');
+  if(!month||!el||!buildPL) return;
+
+  const pl = buildPL(month);
+  const grandIncome   = pl.reduce((s,r)=>s+r.totalCollected,0);
+  const grandExpenses = pl.reduce((s,r)=>s+r.totalExpenses,0);
+  const grandNet      = grandIncome-grandExpenses;
+
+  // Summary totals
+  let summaryHtml = '';
+  if(scopedBldgs.length>1){
+    summaryHtml=`
+      <div style="background:linear-gradient(135deg,#1e3a5f,#1f4e79);border-radius:var(--r);padding:14px;color:white;margin-bottom:12px">
+        <div style="font-size:11px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px">All Buildings · ${month}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
+          <div style="text-align:center"><div style="font-size:16px;font-weight:900;color:#86efac">₹${grandIncome.toLocaleString('en-IN')}</div><div style="font-size:10px;opacity:.7;margin-top:2px">INCOME</div></div>
+          <div style="text-align:center"><div style="font-size:16px;font-weight:900;color:#fca5a5">₹${grandExpenses.toLocaleString('en-IN')}</div><div style="font-size:10px;opacity:.7;margin-top:2px">EXPENSES</div></div>
+          <div style="text-align:center"><div style="font-size:16px;font-weight:900;color:${grandNet>=0?'#86efac':'#fca5a5'}">₹${grandNet.toLocaleString('en-IN')}</div><div style="font-size:10px;opacity:.7;margin-top:2px">NET</div></div>
+        </div>
+      </div>`;
+  }
+
+  // Per-building cards
+  const bldgCards = pl.map(r=>{
+    const catRows = Object.entries(r.expByCat).sort(([,a],[,b])=>b-a).map(([cat,amt])=>{
+      const m=getCatMeta(cat);
+      return`<div style="display:flex;align-items:center;gap:7px;padding:4px 0;border-bottom:1px solid var(--gray-100)">
+        <span>${m.icon}</span>
+        <span style="font-size:11px;flex:1;color:var(--gray-600)">${esc(cat)}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--red)">−₹${amt.toLocaleString('en-IN')}</span>
+      </div>`;
+    }).join('');
+
+    return`<div class="card" style="margin-bottom:10px">
+      <div style="background:${r.netIncome>=0?'var(--green)':'var(--red)'};padding:12px 14px;color:white;border-radius:var(--r) var(--r) 0 0">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:800;font-size:14px">🏗 ${esc(r.bldg)}</span>
+          <span style="font-size:11px;opacity:.8">${r.paidFlats}/${r.occFlats} flats paid</span>
+        </div>
+        <div style="font-size:22px;font-weight:900;margin-top:6px">₹${r.netIncome.toLocaleString('en-IN')}</div>
+        <div style="font-size:11px;opacity:.8;margin-top:2px">Net Income</div>
+      </div>
+      <div class="cb">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:${r.expCount?10:0}px">
+          <div style="background:var(--green-lt);border-radius:8px;padding:9px;text-align:center">
+            <div style="font-size:15px;font-weight:900;color:var(--green)">₹${r.totalCollected.toLocaleString('en-IN')}</div>
+            <div style="font-size:10px;color:var(--gray-500);font-weight:700;margin-top:2px">INCOME</div>
+            ${r.waterCollected||r.elecCollected?`<div style="font-size:10px;color:var(--gray-400);margin-top:3px">
+              Rent ₹${r.rentCollected.toLocaleString('en-IN')}
+              ${r.waterCollected?` + 💧₹${r.waterCollected.toLocaleString('en-IN')}`:''}
+              ${r.elecCollected?` + ⚡₹${r.elecCollected.toLocaleString('en-IN')}`:''}
+            </div>`:''}
+          </div>
+          <div style="background:var(--red-lt);border-radius:8px;padding:9px;text-align:center">
+            <div style="font-size:15px;font-weight:900;color:var(--red)">₹${r.totalExpenses.toLocaleString('en-IN')}</div>
+            <div style="font-size:10px;color:var(--gray-500);font-weight:700;margin-top:2px">EXPENSES</div>
+            <div style="font-size:10px;color:var(--gray-400);margin-top:3px">${r.expCount} item${r.expCount!==1?'s':''}</div>
+          </div>
+        </div>
+        ${r.expCount?`<div style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Expense Breakdown</div>${catRows}`:''}
+        ${!r.expCount?`<div style="font-size:12px;color:var(--gray-400);text-align:center;padding:6px 0">No expenses logged for ${month} — <span style="color:var(--blue);cursor:pointer" onclick="closeModal();openAddExpense()">Add one</span></div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = summaryHtml + bldgCards;
+}
+
+// ═══════════════════════════════════════════
+// BUILDING EXPENSES
+// ═══════════════════════════════════════════
+
+const DEFAULT_EXPENSE_CATEGORIES=[
+  {name:'Security Salary',       icon:'👮', color:'var(--blue)'},
+  {name:'Kaveri Water Bill',     icon:'💧', color:'var(--teal)'},
+  {name:'Borewell Water Bill',   icon:'🪣', color:'var(--teal)'},
+  {name:'Garbage Collection',    icon:'🗑️', color:'var(--gray-600)'},
+  {name:'Lift Maintenance',      icon:'🛗', color:'var(--purple)'},
+  {name:'Generator Fuel',        icon:'⛽', color:'var(--amber)'},
+  {name:'Generator Maintenance', icon:'🔧', color:'var(--amber)'},
+  {name:'Cleaning',              icon:'🧹', color:'var(--green)'},
+  {name:'Common Area Electricity',icon:'💡',color:'#b45309'},
+  {name:'Plumbing',              icon:'🔩', color:'var(--blue)'},
+  {name:'Painting & Repairs',    icon:'🎨', color:'var(--purple)'},
+  {name:'Other',                 icon:'📌', color:'var(--gray-500)'},
+];
+
+function getCatMeta(name){
+  return DEFAULT_EXPENSE_CATEGORIES.find(c=>c.name===name)||{icon:'📌',color:'var(--gray-500)',name};
+}
+
+// ── Add / Edit Expense ───────────────────────────────────────────────────────
+async function openAddExpense(expenseData){
+  const f = expenseData||{};
+  const allFlats = await ga('flats');
+  const buildings = [...new Set(allFlats.map(fl=>fl.block))].sort();
+  const accts = (await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque')).split(',');
+  const mk = monthKey();
+  const defaultBldg = activeBuilding!=='All'?activeBuilding:(f.building||buildings[0]||'');
+
+  const catOpts = DEFAULT_EXPENSE_CATEGORIES.map(c=>
+    `<option value="${esc(c.name)}" ${f.category===c.name?'selected':''}>${c.icon} ${esc(c.name)}</option>`
+  ).join('');
+  const bldgOpts = buildings.map(b=>
+    `<option value="${esc(b)}" ${(f.building||defaultBldg)===b?'selected':''}>${esc(b)}</option>`
+  ).join('');
+  const acctOpts = accts.map(a=>
+    `<option ${f.account===a.trim()?'selected':''}>${esc(a.trim())}</option>`
+  ).join('');
+
+  openModal(editId?'✏️ Edit Expense':'➕ Add Expense',`
+    <div class="frow">
+      <div class="fg"><label class="fl">Building *</label>
+        <select class="fc" id="ex-bldg">${bldgOpts}</select></div>
+      <div class="fg"><label class="fl">Month *</label>
+        <input class="fc" id="ex-month" type="month" value="${f.month||mk}"></div>
+    </div>
+    <div class="fg"><label class="fl">Category *</label>
+      <select class="fc" id="ex-cat">${catOpts}</select></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Amount (₹) *</label>
+        <input class="fc" id="ex-amount" type="number" value="${f.amount||''}" placeholder="e.g. 8000"></div>
+      <div class="fg"><label class="fl">Paid Date</label>
+        <input class="fc" id="ex-date" type="date" value="${f.paidDate||new Date().toISOString().split('T')[0]}"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Account / Paid Via</label>
+        <select class="fc" id="ex-acct">${acctOpts}</select></div>
+      <div class="fg"><label class="fl">Vendor / Payee</label>
+        <input class="fc" id="ex-vendor" value="${esc(f.vendor||'')}" placeholder="Optional"></div>
+    </div>
+    <div class="fg"><label class="fl">Notes</label>
+      <input class="fc" id="ex-notes" value="${esc(f.notes||'')}" placeholder="Invoice no., details…"></div>
+    <button class="btn btn-primary btn-full" onclick="saveExpense()" style="margin-top:4px">
+      ${editId?'✅ Update Expense':'➕ Add Expense'}
+    </button>
+  `);
+}
+
+async function saveExpense(){
+  const building = document.getElementById('ex-bldg')?.value;
+  const month    = document.getElementById('ex-month')?.value;
+  const category = document.getElementById('ex-cat')?.value;
+  const amount   = parseFloat(document.getElementById('ex-amount')?.value);
+  if(!building||!month||!category||isNaN(amount)||amount<=0){
+    toast('⚠️ Building, month, category and amount are required');return;
+  }
+  const data={
+    building,month,category,amount,
+    paidDate:document.getElementById('ex-date')?.value||'',
+    account:document.getElementById('ex-acct')?.value||'',
+    vendor:document.getElementById('ex-vendor')?.value.trim()||'',
+    notes:document.getElementById('ex-notes')?.value.trim()||'',
+    updatedAt:new Date().toISOString()
+  };
+  if(editId){
+    const existing=await g('expenses',editId);
+    data.id=editId;
+    data.createdAt=existing?.createdAt||new Date().toISOString();
+    await put('expenses',data);
+    toast('✅ Expense updated');
+  } else {
+    data.createdAt=new Date().toISOString();
+    await add('expenses',data);
+    toast('✅ Expense added');
+  }
+  closeModal();
+  renderDash();
+  // If the expense modal was opened from viewExpenses, re-render it
+  setTimeout(()=>{
+    const evBody=document.getElementById('ev-body');
+    if(evBody) renderExpenseView();
+  },100);
+}
+
+async function editExpense(id){editId=id;const e=await g('expenses',id);openAddExpense(e)}
+
+function deleteExpense(id,name){
+  showConfirm('Delete Expense',`Remove "${name}" expense?`,async()=>{
+    await del('expenses',id);toast('🗑️ Deleted');viewExpenses();
+  });
+}
+
+// ── Monthly Summary ──────────────────────────────────────────────────────────
+async function viewExpenses(){
+  const allExp   = await ga('expenses');
+  const allFlats = await ga('flats');
+  const buildings= [...new Set(allFlats.map(f=>f.block))].sort();
+  const mk       = monthKey();
+
+  // Build month list from data
+  const months=[...new Set(allExp.map(e=>e.month))].sort().reverse();
+  if(!months.includes(mk)) months.unshift(mk);
+
+  const selectedBldg = activeBuilding!=='All'?activeBuilding:'all';
+  const bldgOpts=`<option value="all">All Buildings</option>`+
+    buildings.map(b=>`<option value="${esc(b)}" ${selectedBldg===b?'selected':''}>${esc(b)}</option>`).join('');
+
+  openModal('🏢 Building Expenses',`
+    <div class="frow" style="margin-bottom:12px">
+      <div class="fg"><label class="fl">Month</label>
+        <select class="fc" id="ev-month" onchange="renderExpenseView()">
+          ${months.map(m=>`<option value="${m}" ${m===mk?'selected':''}>${MONTHS[parseInt(m.split('-')[1])-1]} ${m.split('-')[0]}</option>`).join('')}
+        </select></div>
+      <div class="fg"><label class="fl">Building</label>
+        <select class="fc" id="ev-bldg" onchange="renderExpenseView()">
+          ${bldgOpts}
+        </select></div>
+    </div>
+    <div id="ev-body"></div>
+    <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="closeModal();openAddExpense()">➕ Add Expense</button>
+  `);
+  renderExpenseView();
+}
+
+async function renderExpenseView(){
+  const month = document.getElementById('ev-month')?.value||monthKey();
+  const bldg  = document.getElementById('ev-bldg')?.value||'all';
+  const allExp= await ga('expenses');
+  const exp   = allExp.filter(e=>e.month===month&&(bldg==='all'||e.building===bldg))
+                  .sort((a,b)=>a.category.localeCompare(b.category));
+
+  const total = exp.reduce((s,e)=>s+e.amount,0);
+  const byBldg= {};
+  for(const e of exp){
+    if(!byBldg[e.building]) byBldg[e.building]={total:0,items:[]};
+    byBldg[e.building].total+=e.amount;
+    byBldg[e.building].items.push(e);
+  }
+
+  const el=document.getElementById('ev-body');
+  if(!el) return;
+
+  if(!exp.length){
+    el.innerHTML=`<div class="empty" style="padding:24px 0"><div class="eico">🧾</div><div class="etitle">No expenses for this period</div><div class="esub">Tap Add Expense to log one</div></div>`;
+    return;
+  }
+
+  const summaryCards=`
+    <div class="srow" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+      <div class="scard"><div class="snum" style="font-size:15px;color:var(--red)">₹${total.toLocaleString('en-IN')}</div><div class="slbl">Total Spent</div></div>
+      <div class="scard"><div class="snum" style="color:var(--blue)">${exp.length}</div><div class="slbl">Entries</div></div>
+    </div>`;
+
+  const rows = Object.entries(byBldg).map(([bname,bd])=>`
+    ${bldg==='all'?`<div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.5px;padding:8px 0 4px">${esc(bname)}</div>`:''}
+    ${bd.items.map(e=>{
+      const m=getCatMeta(e.category);
+      return`<div class="card" style="margin-bottom:8px">
+        <div class="cb crow">
+          <div class="cavatar" style="background:${m.color};font-size:18px">${m.icon}</div>
+          <div class="cinfo">
+            <div class="cname">${esc(e.category)}</div>
+            <div class="csub">${e.vendor?esc(e.vendor)+' · ':''} ${e.account||''} ${e.paidDate?'· '+e.paidDate:''}</div>
+            ${e.notes?`<div class="csub">📝 ${esc(e.notes)}</div>`:''}
+          </div>
+          <div class="cright">
+            <div class="camt">₹${e.amount.toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+        <div class="cact">
+          <button class="btn btn-sm btn-outline" onclick="editExpense(${e.id})">✏️ Edit</button>
+          <button class="btn btn-sm btn-ghost" style="color:var(--red);margin-left:auto" onclick="deleteExpense(${e.id},'${esc(e.category)}')">🗑</button>
+        </div>
+      </div>`;
+    }).join('')}
+  `).join('');
+
+  el.innerHTML=summaryCards+rows;
+}
+
+// ── Expense Report (category-wise) ──────────────────────────────────────────
+async function renderExpenseReport(){
+  const allExp   = await ga('expenses');
+  const allFlats = await ga('flats');
+  const flatIds  = buildingFlatIds(allFlats);
+  // No building scope for expenses — they are per-building already
+  const exp = activeBuilding==='All'?allExp:allExp.filter(e=>e.building===activeBuilding);
+
+  if(!exp.length) return{html:'<div class="empty"><div class="eico">🧾</div><div class="etitle">No expense data yet</div></div>',title:'Expense Report'};
+
+  // By category across all time
+  const byCat={};
+  for(const e of exp){
+    if(!byCat[e.category]) byCat[e.category]={total:0,count:0,months:new Set()};
+    byCat[e.category].total+=e.amount;
+    byCat[e.category].count++;
+    byCat[e.category].months.add(e.month);
+  }
+  const grandTotal=Object.values(byCat).reduce((s,c)=>s+c.total,0);
+  const rows=Object.entries(byCat).sort(([,a],[,b])=>b.total-a.total);
+
+  // Last 6 months trend
+  const last6=[...new Set(exp.map(e=>e.month))].sort().reverse().slice(0,6);
+  const byMonth={};
+  for(const e of exp){
+    if(!last6.includes(e.month)) continue;
+    if(!byMonth[e.month]) byMonth[e.month]=0;
+    byMonth[e.month]+=e.amount;
+  }
+
+  const scopeLabel=activeBuilding!=='All'?` — ${activeBuilding}`:'';
+  const html=`
+    <div class="srow" style="grid-template-columns:1fr 1fr">
+      <div class="scard"><div class="snum" style="font-size:14px;color:var(--red)">₹${grandTotal.toLocaleString('en-IN')}</div><div class="slbl">All-time Total</div></div>
+      <div class="scard"><div class="snum" style="color:var(--blue)">${rows.length}</div><div class="slbl">Categories</div></div>
+    </div>
+    <div class="sh"><span class="st">Category Breakdown</span></div>
+    ${rows.map(([cat,d])=>{
+      const m=getCatMeta(cat);
+      const pct=Math.round(d.total/grandTotal*100);
+      return`<div style="background:white;border-radius:10px;padding:10px 13px;margin-bottom:8px;box-shadow:var(--sh)">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="font-size:20px">${m.icon}</span>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:700">${esc(cat)}</div>
+            <div class="pbar2" style="margin-top:5px"><div class="pfill2" style="width:${pct}%;background:${m.color}"></div></div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:14px;font-weight:900;color:var(--red)">₹${d.total.toLocaleString('en-IN')}</div>
+            <div style="font-size:10px;color:var(--gray-400)">${pct}% · ${d.count} entries</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+    ${last6.length>1?`
+    <div class="sh" style="margin-top:8px"><span class="st">Monthly Trend (Last ${last6.length})</span></div>
+    <div class="rtable"><table>
+      <tr><th>Month</th><th style="text-align:right">Total Expenses</th></tr>
+      ${last6.map(m=>`<tr><td><b>${m}</b></td><td style="text-align:right;color:var(--red);font-weight:700">₹${(byMonth[m]||0).toLocaleString('en-IN')}</td></tr>`).join('')}
+    </table></div>`:''}`;
+
+  return{html,title:`Expense Report${scopeLabel}`};
+}
+
+// ── Export Expenses Excel ────────────────────────────────────────────────────
+async function exportExpensesExcel(){
+  const allExp = await ga('expenses');
+  const exp = activeBuilding==='All'?allExp:allExp.filter(e=>e.building===activeBuilding);
+  if(!exp.length){toast('🧾 No expenses to export');return}
+  const wb=XLSX.utils.book_new();
+  const rows=exp.sort((a,b)=>b.month.localeCompare(a.month)||a.building.localeCompare(b.building)||a.category.localeCompare(b.category))
+    .map(e=>({'Month':e.month,'Building':e.building,'Category':e.category,'Amount (₹)':e.amount,
+      'Paid Date':e.paidDate||'','Account':e.account||'','Vendor':e.vendor||'','Notes':e.notes||''}));
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:10},{wch:14},{wch:24},{wch:14},{wch:12},{wch:20},{wch:20},{wch:30}];
+  XLSX.utils.book_append_sheet(wb,ws,'Expenses');
+  const suffix=activeBuilding!=='All'?`_${activeBuilding.replace(/\s+/g,'_')}`:'';
+  XLSX.writeFile(wb,`TMS_Expenses${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast('✅ Expenses exported!');
+}
+
 // ═══════════════════════════════════════════
 // BACKUP REMINDER
 // ═══════════════════════════════════════════
@@ -2949,14 +3844,753 @@ async function saveBackupFreq(){
 }
 
 // ═══════════════════════════════════════════
+// DARK MODE
+// ═══════════════════════════════════════════
+function toggleDarkMode(){
+  const isDark=document.body.classList.toggle('dark');
+  localStorage.setItem('tms_dark',isDark?'1':'0');
+  document.getElementById('dark-btn').textContent=isDark?'☀️':'🌙';
+}
+function applyDarkMode(){
+  const isDark=localStorage.getItem('tms_dark')==='1';
+  if(isDark){document.body.classList.add('dark');document.getElementById('dark-btn').textContent='☀️';}
+}
+
+// ═══════════════════════════════════════════
+// PIN LOCK
+// ═══════════════════════════════════════════
+let _pinBuffer='';
+let _pinMode='unlock'; // 'unlock' | 'set' | 'confirm'
+let _pinTemp='';
+
+function pinKey(d){
+  if(d==='') return; // settings gear tapped
+  _pinBuffer+=d;
+  updatePinDots();
+  if(_pinBuffer.length===4) setTimeout(processPinEntry,120);
+}
+function pinBackspace(){
+  _pinBuffer=_pinBuffer.slice(0,-1);
+  updatePinDots();
+}
+function updatePinDots(){
+  for(let i=0;i<4;i++){
+    document.getElementById('pd'+i)?.classList.toggle('filled',i<_pinBuffer.length);
+  }
+}
+function processPinEntry(){
+  const stored=localStorage.getItem('tms_pin');
+  if(_pinMode==='unlock'){
+    if(!stored){unlockApp();return;}
+    if(_pinBuffer===stored){unlockApp();}
+    else{document.getElementById('pin-error').textContent='Incorrect PIN. Try again.';_pinBuffer='';updatePinDots();}
+  } else if(_pinMode==='set'){
+    _pinTemp=_pinBuffer;_pinBuffer='';updatePinDots();
+    _pinMode='confirm';
+    document.getElementById('pin-sub').textContent='Confirm your new PIN';
+    document.getElementById('pin-error').textContent='';
+  } else if(_pinMode==='confirm'){
+    if(_pinBuffer===_pinTemp){
+      localStorage.setItem('tms_pin',_pinBuffer);
+      toast('✅ PIN set successfully');
+      document.getElementById('pin-lock').classList.add('hidden');
+      _pinMode='unlock';_pinBuffer='';_pinTemp='';updatePinDots();
+    } else {
+      document.getElementById('pin-error').textContent='PINs do not match. Try again.';
+      _pinBuffer='';_pinTemp='';_pinMode='set';updatePinDots();
+      document.getElementById('pin-sub').textContent='Set a new 4-digit PIN';
+    }
+  }
+}
+function unlockApp(){
+  document.getElementById('pin-lock').classList.add('hidden');
+  _pinBuffer='';updatePinDots();
+  document.getElementById('pin-error').textContent='';
+}
+function pinForgot(){
+  if(confirm('Reset PIN? All data remains intact.')){
+    localStorage.removeItem('tms_pin');
+    unlockApp();
+    toast('✅ PIN removed');
+  }
+}
+function checkPinOnLoad(){
+  const pin=localStorage.getItem('tms_pin');
+  if(pin){
+    _pinMode='unlock';_pinBuffer='';updatePinDots();
+    document.getElementById('pin-sub').textContent='Enter your PIN to continue';
+    document.getElementById('pin-lock').classList.remove('hidden');
+  }
+}
+
+async function openPinSettings(){
+  const hasPin=!!localStorage.getItem('tms_pin');
+  openModal('🔐 App Lock',`
+    <div style="background:var(--blue-lt);border-radius:9px;padding:11px 13px;margin-bottom:14px;font-size:13px;color:var(--blue)">
+      PIN lock protects your app — you'll need to enter it every time you open TMS.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+      <button class="btn btn-primary btn-full" onclick="startSetPin()">${hasPin?'🔑 Change PIN':'🔐 Set PIN'}</button>
+      ${hasPin?`<button class="btn btn-red btn-full" onclick="removePin()">🗑 Remove PIN</button>`:'<div></div>'}
+    </div>
+    <div style="font-size:12px;color:var(--gray-400);text-align:center;margin-top:12px">
+      ${hasPin?'App is currently 🔒 locked':'App is currently 🔓 unlocked'}
+    </div>
+  `);
+}
+function startSetPin(){
+  closeModal();
+  _pinMode='set';_pinBuffer='';_pinTemp='';updatePinDots();
+  document.getElementById('pin-sub').textContent='Set a new 4-digit PIN';
+  document.getElementById('pin-error').textContent='';
+  document.getElementById('pin-lock').classList.remove('hidden');
+}
+function removePin(){
+  localStorage.removeItem('tms_pin');
+  toast('✅ PIN removed');closeModal();
+}
+
+// ═══════════════════════════════════════════
+// RENT RECEIPT PDF
+// ═══════════════════════════════════════════
+async function generateReceipt(billId, flatId){
+  const bill    = await g('billing', billId);
+  const fl      = await g('flats', flatId);
+  const tenants = await ga('tenants');
+  const ten     = tenants.find(t=>t.flatId===flatId);
+  const society = await getSetting('society','Society Management');
+  const now     = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+  const receiptNo = `RCP-${flatId}-${bill.month.replace('-','')}`;
+  const monthFmt  = `${MONTHS[parseInt(bill.month.split('-')[1])-1]} ${bill.month.split('-')[0]}`;
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Rent Receipt ${receiptNo}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:32px;max-width:520px;margin:0 auto}
+  .header{text-align:center;border-bottom:3px double #1a3a5c;padding-bottom:14px;margin-bottom:18px}
+  .logo{font-size:24px;font-weight:900;color:#1a3a5c}
+  .sub{font-size:12px;color:#4b5563;margin-top:3px}
+  .receipt-title{font-size:18px;font-weight:900;color:#1a3a5c;margin:14px 0 4px}
+  .receipt-no{font-size:11px;color:#6b7280}
+  .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f3f4f6}
+  .row .label{color:#4b5563;font-size:12px}
+  .row .val{font-weight:700;font-size:13px}
+  .total-row{display:flex;justify-content:space-between;padding:11px 12px;background:#f0fdf4;border-radius:8px;margin-top:12px}
+  .total-label{font-weight:800;font-size:14px;color:#166534}
+  .total-val{font-weight:900;font-size:18px;color:#166534}
+  .amount-words{font-size:12px;color:#6b7280;margin:8px 0 16px;font-style:italic}
+  .sig-section{margin-top:24px;display:flex;justify-content:space-between}
+  .sig-box{text-align:center;font-size:11px;color:#6b7280;border-top:1px solid #d1d5db;padding-top:6px;width:140px}
+  .footer{margin-top:24px;text-align:center;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px}
+  .stamp{display:inline-block;border:2px solid #166534;color:#166534;font-weight:900;font-size:16px;padding:8px 18px;border-radius:6px;transform:rotate(-8deg);margin:10px 0;letter-spacing:1px}
+  @media print{@page{size:A5;margin:10mm} button{display:none}}
+</style></head><body>
+<div class="header">
+  <div class="logo">🏢 ${esc(society)}</div>
+  <div class="sub">Rent Receipt</div>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:flex-start">
+  <div><div class="receipt-title">RENT RECEIPT</div><div class="receipt-no">${receiptNo}</div></div>
+  <div style="text-align:right;font-size:12px;color:#4b5563">Date: ${now}</div>
+</div>
+<div style="margin:16px 0">
+  <div class="row"><span class="label">Tenant Name</span><span class="val">${esc(ten?.name||'—')}</span></div>
+  <div class="row"><span class="label">Flat / Unit</span><span class="val">${esc(fl?.block||'')} — ${esc(fl?.flatNo||'')}</span></div>
+  <div class="row"><span class="label">Rent Period</span><span class="val">${monthFmt}</span></div>
+  <div class="row"><span class="label">Rent Amount</span><span class="val">₹${(parseFloat(bill.rentPaid)||0).toLocaleString('en-IN')}</span></div>
+  ${bill.waterAmount&&bill.waterStatus==='Paid'?`<div class="row"><span class="label">Water Charges</span><span class="val">₹${parseFloat(bill.waterAmount).toLocaleString('en-IN')}</span></div>`:''}
+  ${bill.elecAmount&&bill.elecStatus==='Paid'?`<div class="row"><span class="label">Electricity Charges</span><span class="val">₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')}</span></div>`:''}
+  <div class="row"><span class="label">Payment Mode</span><span class="val">${esc(bill.account||'—')}</span></div>
+  <div class="row"><span class="label">Payment Date</span><span class="val">${bill.paidDate||'—'}</span></div>
+</div>
+<div class="total-row">
+  <span class="total-label">Total Amount Received</span>
+  <span class="total-val">₹${(parseFloat(bill.total)||0).toLocaleString('en-IN')}</span>
+</div>
+<div style="text-align:center;margin-top:16px"><span class="stamp">✓ PAID</span></div>
+<div class="sig-section">
+  <div class="sig-box">Tenant Signature</div>
+  <div class="sig-box">Landlord / Authorized Signatory</div>
+</div>
+<div class="footer">This is a computer-generated receipt. &nbsp;|&nbsp; ⚡ ASAP Automations — Tenant Management System</div>
+<div style="text-align:center;margin-top:16px">
+  <button onclick="window.print()" style="background:#1a3a5c;color:white;border:none;padding:9px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">🖨️ Print / Save PDF</button>
+</div>
+</body></html>`;
+
+  const win=window.open('','_blank');
+  if(win){win.document.write(html);win.document.close();setTimeout(()=>{try{win.focus();win.print();}catch(e){}},500);}
+  else toast('⚠️ Allow popups to generate receipt');
+}
+
+// ═══════════════════════════════════════════
+// PARTIAL PAYMENTS
+// ═══════════════════════════════════════════
+async function openPartialPayment(billId){
+  const bill    = await g('billing',billId);
+  const allPay  = await ga('payments');
+  const prevPay = allPay.filter(p=>p.billId===billId).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
+  const totalPaid= prevPay.reduce((s,p)=>s+p.amount,0)+(parseFloat(bill.rentPaid)||0);
+  const due      = parseFloat(bill.rentDue)||0;
+  const remaining= Math.max(0, due - totalPaid);
+  const accts=(await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque')).split(',');
+
+  openModal('⊹ Partial Payment',`
+    <div style="background:var(--blue-lt);border-radius:9px;padding:10px 13px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:13px">
+        <span>Total Due</span><b>₹${due.toLocaleString('en-IN')}</b>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-top:4px">
+        <span>Paid so far</span><span style="color:var(--green);font-weight:700">₹${totalPaid.toLocaleString('en-IN')}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;margin-top:6px;padding-top:6px;border-top:1px solid var(--blue)">
+        <span>Remaining</span><span style="color:${remaining>0?'var(--red)':'var(--green)'}">₹${remaining.toLocaleString('en-IN')}</span>
+      </div>
+    </div>
+    ${prevPay.length?`<div style="margin-bottom:12px">${prevPay.map(p=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--gray-100)"><span>${p.date} · ${esc(p.account)}</span><span style="color:var(--green);font-weight:700">+₹${p.amount.toLocaleString('en-IN')}</span></div>`).join('')}</div>`:''}
+    ${remaining>0?`
+    <div class="fg"><label class="fl">Payment Amount (₹)</label>
+      <input class="fc" id="pp-amount" type="number" placeholder="${remaining}" max="${remaining}"></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Account</label>
+        <select class="fc" id="pp-acct">${accts.map(a=>`<option>${esc(a.trim())}</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">Date</label>
+        <input class="fc" id="pp-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+    </div>
+    <button class="btn btn-primary btn-full" onclick="savePartialPayment(${billId},${due},${totalPaid})">💾 Record Payment</button>
+    `:`<div style="text-align:center;padding:12px;color:var(--green);font-weight:700">✅ Fully paid!</div>`}
+  `);
+}
+
+async function savePartialPayment(billId, due, prevTotal){
+  const amount = parseFloat(document.getElementById('pp-amount')?.value);
+  const acct   = document.getElementById('pp-acct')?.value||'';
+  const date   = document.getElementById('pp-date')?.value||'';
+  if(!amount||amount<=0){toast('⚠️ Enter a valid amount');return}
+
+  const bill = await g('billing',billId);
+  await add('payments',{billId,flatId:bill.flatId,amount,account:acct,date,month:bill.month,createdAt:new Date().toISOString()});
+
+  const newTotal = prevTotal + amount;
+  // Update billing record
+  bill.rentPaid = Math.min(newTotal, due);
+  bill.total    = bill.rentPaid + (bill.waterStatus==='Paid'?parseFloat(bill.waterAmount)||0:0) + (bill.elecStatus==='Paid'?parseFloat(bill.elecAmount)||0:0);
+  if(newTotal >= due){ bill.rentStatus='Paid'; bill.paidDate=date; bill.account=acct; }
+  else { bill.rentStatus='Partial'; }
+  await put('billing',bill);
+  toast(newTotal>=due?'✅ Fully paid!':'✅ Partial payment recorded');
+  closeModal(); renderBilling(); renderDash();
+}
+
+// ═══════════════════════════════════════════
+// MOVE-OUT WORKFLOW
+// ═══════════════════════════════════════════
+async function openMoveOutWizard(){
+  const allFlats   = await ga('flats');
+  const tenants    = await ga('tenants');
+  const occupied   = filterByBuilding(allFlats).filter(f=>f.status==='Occupied');
+  const flatOpts   = occupied.map(f=>{
+    const t=tenants.find(t=>t.flatId===f.id);
+    return`<option value="${f.id}">${esc(f.block)} — ${esc(f.flatNo)} ${t?'('+esc(t.name)+')':''}`;
+  }).join('');
+
+  openModal('🚪 Move-Out Wizard',`
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:14px">
+      Process a tenant move-out: calculate final dues, deduct from deposit, and mark flat as Vacant.
+    </div>
+    <div class="fg"><label class="fl">Select Flat *</label>
+      <select class="fc" id="mo-flat" onchange="loadMoveOutDetails(this.value)">
+        <option value="">Choose flat…</option>${flatOpts}
+      </select></div>
+    <div id="mo-details"></div>
+  `);
+}
+
+async function loadMoveOutDetails(flatId){
+  flatId=parseInt(flatId);if(!flatId)return;
+  const fl    = await g('flats',flatId);
+  const ten   = (await ga('tenants')).find(t=>t.flatId===flatId);
+  const bills = await ga('billing');
+  const pending = bills.filter(b=>b.flatId===flatId&&['Pending','Overdue','Partial'].includes(b.rentStatus));
+  const totalDues = pending.reduce((s,b)=>s+(parseFloat(b.rentDue)||0)-(parseFloat(b.rentPaid)||0),0);
+  const deposit = parseFloat(ten?.deposit)||0;
+  const el=document.getElementById('mo-details');
+  if(!el)return;
+  el.innerHTML=`
+    <div style="background:var(--blue-lt);border-radius:9px;padding:11px 13px;margin:10px 0">
+      <div style="font-size:13px;font-weight:800;margin-bottom:8px">👤 ${esc(ten?.name||'No tenant')} · ${esc(fl.block)}—${esc(fl.flatNo)}</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>Security Deposit</span><b style="color:var(--green)">₹${deposit.toLocaleString('en-IN')}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px"><span>Pending Dues (${pending.length} months)</span><b style="color:var(--red)">₹${totalDues.toLocaleString('en-IN')}</b></div>
+    </div>
+    <div class="fg"><label class="fl">Deductions from Deposit (₹)</label>
+      <input class="fc" id="mo-deduct" type="number" value="${Math.min(totalDues,deposit)}" oninput="calcMoRefund(${deposit})" placeholder="Damage, dues, etc."></div>
+    <div class="fg"><label class="fl">Deduction Reason</label>
+      <input class="fc" id="mo-reason" placeholder="Pending rent, damage, cleaning…" value="${totalDues>0?'Pending rent dues':''}"></div>
+    <div class="fg"><label class="fl">Move-Out Date</label>
+      <input class="fc" id="mo-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+    <div style="background:var(--green-lt);border-radius:9px;padding:11px 13px;margin-bottom:14px" id="mo-refund-box">
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:var(--green)">
+        <span>Refund Amount</span><span id="mo-refund-amt">₹${Math.max(0,deposit-Math.min(totalDues,deposit)).toLocaleString('en-IN')}</span>
+      </div>
+    </div>
+    <div class="fg"><label class="fl">Notes</label>
+      <textarea class="fc" id="mo-notes" placeholder="Meter readings, condition, etc." style="min-height:60px"></textarea></div>
+    <button class="btn btn-red btn-full" onclick="processMoveOut(${flatId},${deposit})">🚪 Process Move-Out</button>
+  `;
+}
+
+function calcMoRefund(deposit){
+  const ded=parseFloat(document.getElementById('mo-deduct')?.value)||0;
+  const refund=Math.max(0,deposit-ded);
+  const el=document.getElementById('mo-refund-amt');
+  if(el)el.textContent='₹'+refund.toLocaleString('en-IN');
+  const box=document.getElementById('mo-refund-box');
+  if(box)box.style.background=refund>0?'var(--green-lt)':'var(--red-lt)';
+}
+
+async function processMoveOut(flatId,deposit){
+  const ded    = parseFloat(document.getElementById('mo-deduct')?.value)||0;
+  const reason = document.getElementById('mo-reason')?.value.trim()||'';
+  const date   = document.getElementById('mo-date')?.value||new Date().toISOString().split('T')[0];
+  const notes  = document.getElementById('mo-notes')?.value.trim()||'';
+  const refund = Math.max(0,deposit-ded);
+  const fl     = await g('flats',flatId);
+  const ten    = (await ga('tenants')).find(t=>t.flatId===flatId);
+
+  showConfirm('Confirm Move-Out',
+    `Move out ${ten?.name||'tenant'} from ${fl.block}-${fl.flatNo}? Refund: ₹${refund.toLocaleString('en-IN')}. This cannot be undone.`,
+    async()=>{
+      // Save move-out record
+      await add('moveouts',{flatId,tenantId:ten?.id,tenantName:ten?.name||'',flatNo:fl.flatNo,block:fl.block,
+        deposit,deductions:ded,deductionReason:reason,refund,moveOutDate:date,notes,createdAt:new Date().toISOString()});
+      // Archive tenant (mark as moved out, keep record)
+      if(ten){
+        const updated={...ten,movedOut:true,moveOutDate:date,updatedAt:new Date().toISOString()};
+        await put('tenants',updated);
+      }
+      // Mark flat as Vacant
+      await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
+      toast('✅ Move-out processed');
+      closeModal();renderDash();renderFlats();renderTenants();
+      // Show refund summary
+      openModal('🧾 Move-Out Complete',`
+        <div style="text-align:center;padding:14px 0">
+          <div style="font-size:40px;margin-bottom:10px">🚪</div>
+          <div style="font-size:16px;font-weight:800">${esc(ten?.name||'')} has moved out</div>
+          <div style="font-size:13px;color:var(--gray-500);margin-top:4px">${esc(fl.block)} — ${esc(fl.flatNo)} is now Vacant</div>
+        </div>
+        <div style="background:var(--${refund>0?'green':'gray'}-lt);border-radius:9px;padding:13px;margin:12px 0">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px"><span>Deposit Collected</span><span>₹${deposit.toLocaleString('en-IN')}</span></div>
+          ${ded>0?`<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;color:var(--red)"><span>Deductions (${esc(reason)})</span><span>−₹${ded.toLocaleString('en-IN')}</span></div>`:''}
+          <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900;color:var(--${refund>0?'green':'gray-600'});border-top:1px solid var(--gray-200);padding-top:8px;margin-top:5px"><span>${refund>0?'Refund to Tenant':'No Refund'}</span><span>₹${refund.toLocaleString('en-IN')}</span></div>
+        </div>
+        <button class="btn btn-primary btn-full" onclick="closeModal()">✅ Done</button>
+      `);
+    },'Move Out','🚪');
+}
+
+async function viewMoveOutHistory(){
+  const moveouts = await ga('moveouts');
+  if(!moveouts.length){
+    openModal('📜 Move-Out History',`<div class="empty"><div class="eico">🚪</div><div class="etitle">No move-outs yet</div></div>`);return;
+  }
+  moveouts.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  openModal('📜 Move-Out History',`
+    ${moveouts.map(m=>`
+      <div class="card" style="margin-bottom:8px">
+        <div class="cb crow">
+          <div class="cavatar" style="background:var(--gray-400)">🚪</div>
+          <div class="cinfo">
+            <div class="cname">${esc(m.tenantName||'—')}</div>
+            <div class="csub">${esc(m.block)}—${esc(m.flatNo)} · ${m.moveOutDate||''}</div>
+          </div>
+          <div class="cright">
+            <div style="font-size:12px;font-weight:800;color:${m.refund>0?'var(--green)':'var(--gray-500)'}">Refund: ₹${(m.refund||0).toLocaleString('en-IN')}</div>
+            ${m.deductions>0?`<div style="font-size:10px;color:var(--red)">Ded: ₹${m.deductions.toLocaleString('en-IN')}</div>`:''}
+          </div>
+        </div>
+      </div>`).join('')}
+  `);
+}
+
+// ═══════════════════════════════════════════
+// MAINTENANCE LOG
+// ═══════════════════════════════════════════
+const MAINT_STATUS=['Open','In Progress','Resolved'];
+const MAINT_CATS=['Plumbing','Electrical','Carpentry','Painting','AC/Appliance','Pest Control','Lift','Generator','Common Area','Other'];
+
+async function openAddMaintenance(data){
+  const f=data||{};
+  const allFlats=await ga('flats');
+  const buildings=[...new Set(filterByBuilding(allFlats).map(fl=>fl.block))].sort();
+  const flatOpts=filterByBuilding(allFlats).map(fl=>`<option value="${fl.id}" ${f.flatId===fl.id?'selected':''}>${esc(fl.block)}—${esc(fl.flatNo)}</option>`).join('');
+  const catOpts=MAINT_CATS.map(c=>`<option ${f.category===c?'selected':''}>${c}</option>`).join('');
+
+  openModal(editId?'✏️ Edit Request':'🔧 Log Maintenance Request',`
+    <div class="frow">
+      <div class="fg"><label class="fl">Flat (optional)</label>
+        <select class="fc" id="mt-flat"><option value="">Common area / building</option>${flatOpts}</select></div>
+      <div class="fg"><label class="fl">Category *</label>
+        <select class="fc" id="mt-cat">${catOpts}</select></div>
+    </div>
+    <div class="fg"><label class="fl">Description *</label>
+      <textarea class="fc" id="mt-desc" style="min-height:68px" placeholder="Describe the issue…">${esc(f.description||'')}</textarea></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Priority</label>
+        <select class="fc" id="mt-pri">
+          ${['Low','Medium','High','Urgent'].map(p=>`<option ${f.priority===p?'selected':''}>${p}</option>`).join('')}
+        </select></div>
+      <div class="fg"><label class="fl">Date Reported</label>
+        <input class="fc" id="mt-date" type="date" value="${f.reportedDate||new Date().toISOString().split('T')[0]}"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Status</label>
+        <select class="fc" id="mt-status">
+          ${MAINT_STATUS.map(s=>`<option ${(f.status||'Open')===s?'selected':''}>${s}</option>`).join('')}
+        </select></div>
+      <div class="fg"><label class="fl">Cost (₹)</label>
+        <input class="fc" id="mt-cost" type="number" value="${f.cost||''}" placeholder="0"></div>
+    </div>
+    <div class="fg"><label class="fl">Remarks / Resolution</label>
+      <input class="fc" id="mt-remarks" value="${esc(f.remarks||'')}" placeholder="Vendor name, action taken…"></div>
+    <button class="btn btn-primary btn-full" onclick="saveMaintenance()" style="margin-top:4px">${editId?'✅ Update':'🔧 Log Request'}</button>
+  `);
+}
+
+async function saveMaintenance(){
+  const desc=document.getElementById('mt-desc')?.value.trim();
+  if(!desc){toast('⚠️ Description is required');return}
+  const data={
+    flatId:parseInt(document.getElementById('mt-flat')?.value)||null,
+    category:document.getElementById('mt-cat')?.value,
+    description:desc,
+    priority:document.getElementById('mt-pri')?.value||'Medium',
+    reportedDate:document.getElementById('mt-date')?.value||new Date().toISOString().split('T')[0],
+    status:document.getElementById('mt-status')?.value||'Open',
+    cost:parseFloat(document.getElementById('mt-cost')?.value)||0,
+    remarks:document.getElementById('mt-remarks')?.value.trim()||'',
+    updatedAt:new Date().toISOString()
+  };
+  if(editId){
+    const ex=await g('maintenance',editId);data.id=editId;data.createdAt=ex?.createdAt||new Date().toISOString();
+    await put('maintenance',data);toast('✅ Updated');
+  } else {
+    data.createdAt=new Date().toISOString();await add('maintenance',data);toast('✅ Request logged');
+  }
+  closeModal();viewMaintenance();renderDash();
+}
+
+async function viewMaintenance(filter='Open'){
+  const all=await ga('maintenance');
+  const allFlats=await ga('flats');
+  const open=all.filter(m=>m.status==='Open').length;
+  const inprog=all.filter(m=>m.status==='In Progress').length;
+
+  const filtered=filter==='All'?all:all.filter(m=>m.status===filter);
+  filtered.sort((a,b)=>{
+    const pri={Urgent:0,High:1,Medium:2,Low:3};
+    return (pri[a.priority]||2)-(pri[b.priority]||2)||b.createdAt.localeCompare(a.createdAt);
+  });
+
+  const priColor={Urgent:'var(--red)',High:'var(--amber)',Medium:'var(--blue)',Low:'var(--gray-400)'};
+
+  openModal('🔧 Maintenance Requests',`
+    <div class="chips" style="margin-bottom:12px">
+      ${['Open','In Progress','Resolved','All'].map(s=>`<button class="chip ${filter===s?'active':''}" onclick="viewMaintenance('${s}')">${s==='Open'?s+' ('+open+')':s==='In Progress'?s+' ('+inprog+')':s}</button>`).join('')}
+    </div>
+    ${filtered.length===0?`<div class="empty" style="padding:20px"><div class="eico">✅</div><div class="etitle">No ${filter} requests</div></div>`:''}
+    ${filtered.map(m=>{
+      const fl=allFlats.find(f=>f.id===m.flatId);
+      return`<div class="card" style="margin-bottom:8px">
+        <div class="cb crow">
+          <div class="cavatar" style="background:${priColor[m.priority]||'var(--blue)'};font-size:14px">🔧</div>
+          <div class="cinfo">
+            <div class="cname">${esc(m.category)} ${m.priority==='Urgent'||m.priority==='High'?'🔴':''}</div>
+            <div class="csub">${fl?esc(fl.block)+'-'+esc(fl.flatNo):'Common'} · ${m.reportedDate||''}</div>
+            <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${esc(m.description)}</div>
+            ${m.cost?`<div style="font-size:11px;color:var(--amber)">Cost: ₹${m.cost.toLocaleString('en-IN')}</div>`:''}
+          </div>
+          <div style="flex-shrink:0">
+            <span class="badge ${m.status==='Resolved'?'bg-green':m.status==='In Progress'?'bg-yellow':'bg-red'}">${m.status}</span>
+          </div>
+        </div>
+        <div class="cact">
+          ${m.status!=='Resolved'?`<button class="btn btn-sm btn-green" onclick="resolveMaintenance(${m.id})">✅ Resolve</button>`:''}
+          ${m.status==='Open'?`<button class="btn btn-sm btn-ghost" onclick="updateMaintenanceStatus(${m.id},'In Progress')">▶ In Progress</button>`:''}
+          <button class="btn btn-sm btn-outline" onclick="closeModal();editId=${m.id};openAddMaintenance(${JSON.stringify({...m,flatId:m.flatId||''}).replace(/"/g,"'")})">✏️</button>
+          <button class="btn btn-sm btn-ghost" style="color:var(--red);margin-left:auto" onclick="deleteMaintenance(${m.id})">🗑</button>
+        </div>
+      </div>`;
+    }).join('')}
+    <button class="btn btn-primary btn-full" style="margin-top:8px" onclick="closeModal();editId=null;openAddMaintenance()">➕ New Request</button>
+  `);
+}
+
+async function resolveMaintenance(id){
+  const m=await g('maintenance',id);
+  m.status='Resolved';m.resolvedDate=new Date().toISOString().split('T')[0];m.updatedAt=new Date().toISOString();
+  await put('maintenance',m);toast('✅ Marked as Resolved');viewMaintenance('In Progress');
+}
+async function updateMaintenanceStatus(id,status){
+  const m=await g('maintenance',id);m.status=status;m.updatedAt=new Date().toISOString();
+  await put('maintenance',m);toast('✅ Status updated');viewMaintenance();
+}
+function deleteMaintenance(id){
+  showConfirm('Delete Request','Remove this maintenance request?',async()=>{await del('maintenance',id);toast('🗑️ Deleted');viewMaintenance();});
+}
+
+// ═══════════════════════════════════════════
+// ANNUAL P&L REPORT
+// ═══════════════════════════════════════════
+async function renderAnnualPL(){
+  const allBills    = await ga('billing');
+  const allExpenses = await ga('expenses');
+  const allFlats    = await ga('flats');
+  const society     = await getSetting('society','Society Management');
+
+  const bldgs = activeBuilding==='All'?[...new Set(allFlats.map(f=>f.block))].sort():[activeBuilding];
+  const years = [...new Set([...allBills.map(b=>b.month?.split('-')[0]),...allExpenses.map(e=>e.month?.split('-')[0])].filter(Boolean))].sort().reverse();
+  if(!years.length) return{title:'Annual P&L',html:'<div class="empty"><div class="eico">📅</div><div class="etitle">No data yet</div></div>'};
+
+  const selectedYear=years[0];
+  function buildYear(yr){
+    const months=Array.from({length:12},(_,i)=>`${yr}-${String(i+1).padStart(2,'0')}`);
+    return months.map(mon=>{
+      const bldgData=bldgs.map(bldg=>{
+        const bFlats=allFlats.filter(f=>f.block===bldg);
+        const bIds=new Set(bFlats.map(f=>f.id));
+        const bBills=allBills.filter(b=>b.month===mon&&bIds.has(b.flatId));
+        const inc=bBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0)
+                 +bBills.reduce((s,b)=>s+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0),0)
+                 +bBills.reduce((s,b)=>s+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0),0);
+        const exp=allExpenses.filter(e=>e.month===mon&&e.building===bldg).reduce((s,e)=>s+e.amount,0);
+        return{bldg,inc,exp,net:inc-exp};
+      });
+      const totInc=bldgData.reduce((s,r)=>s+r.inc,0);
+      const totExp=bldgData.reduce((s,r)=>s+r.exp,0);
+      return{mon,bldgData,totInc,totExp,totNet:totInc-totExp};
+    });
+  }
+
+  const yearOpts=years.map(y=>`<option value="${y}" ${y===selectedYear?'selected':''}>${y}</option>`).join('');
+  const data=buildYear(selectedYear);
+  const grandInc=data.reduce((s,r)=>s+r.totInc,0);
+  const grandExp=data.reduce((s,r)=>s+r.totExp,0);
+  const grandNet=grandInc-grandExp;
+
+  const html=`
+    <div class="fg" style="margin-bottom:12px">
+      <label class="fl">Year</label>
+      <select class="fc" id="apl-year" onchange="refreshAnnualPL()">${yearOpts}</select>
+    </div>
+    <div id="apl-body"></div>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="btn btn-primary btn-full" onclick="exportAnnualPDF()">📄 Export PDF</button>
+      <button class="btn btn-ghost" onclick="exportAnnualExcel()">📊 Excel</button>
+    </div>`;
+
+  window._aplBldgs=bldgs;window._aplAllBills=allBills;window._aplAllExp=allExpenses;window._aplAllFlats=allFlats;
+  setTimeout(()=>refreshAnnualPL(),80);
+  return{title:`Annual P&L — ${selectedYear}`,html};
+}
+
+function refreshAnnualPL(){
+  const yr=document.getElementById('apl-year')?.value;
+  const el=document.getElementById('apl-body');
+  if(!yr||!el||!window._aplAllBills) return;
+  const bldgs=window._aplBldgs;
+  const allBills=window._aplAllBills;const allExp=window._aplAllExp;const allFlats=window._aplAllFlats;
+  const months=Array.from({length:12},(_,i)=>`${yr}-${String(i+1).padStart(2,'0')}`);
+  const rows=months.map(mon=>{
+    const bData=bldgs.map(bldg=>{
+      const bIds=new Set(allFlats.filter(f=>f.block===bldg).map(f=>f.id));
+      const bBills=allBills.filter(b=>b.month===mon&&bIds.has(b.flatId));
+      const inc=bBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0)+bBills.reduce((s,b)=>s+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0)+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0),0);
+      const exp=allExp.filter(e=>e.month===mon&&e.building===bldg).reduce((s,e)=>s+e.amount,0);
+      return{inc,exp,net:inc-exp};
+    });
+    const tInc=bData.reduce((s,r)=>s+r.inc,0),tExp=bData.reduce((s,r)=>s+r.exp,0);
+    return{mon,bData,tInc,tExp,tNet:tInc-tExp,hasData:tInc>0||tExp>0};
+  });
+  const gInc=rows.reduce((s,r)=>s+r.tInc,0),gExp=rows.reduce((s,r)=>s+r.tExp,0),gNet=gInc-gExp;
+
+  el.innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+      <div class="scard"><div class="snum" style="font-size:14px;color:var(--green)">₹${gInc.toLocaleString('en-IN')}</div><div class="slbl">Total Income</div></div>
+      <div class="scard"><div class="snum" style="font-size:14px;color:var(--red)">₹${gExp.toLocaleString('en-IN')}</div><div class="slbl">Total Expenses</div></div>
+      <div class="scard"><div class="snum" style="font-size:14px;color:${gNet>=0?'var(--green)':'var(--red)'}">₹${gNet.toLocaleString('en-IN')}</div><div class="slbl">Net Profit</div></div>
+    </div>
+    <div class="rtable"><table>
+      <tr><th>Month</th>${bldgs.length>1?bldgs.map(b=>`<th>${esc(b)}</th>`).join('')+`<th>Income</th><th>Expenses</th>`:'<th>Income</th><th>Expenses</th>'}<th>Net</th></tr>
+      ${rows.map(r=>`<tr ${!r.hasData?'style="opacity:.4"':''}>
+        <td><b>${MONTHS[parseInt(r.mon.split('-')[1])-1].slice(0,3)}</b></td>
+        ${bldgs.length>1?r.bData.map(d=>`<td style="color:${d.net>=0?'var(--green)':'var(--red)'};font-weight:700">₹${d.net.toLocaleString('en-IN')}</td>`).join('')+`<td style="color:var(--green)">₹${r.tInc.toLocaleString('en-IN')}</td><td style="color:var(--red)">₹${r.tExp.toLocaleString('en-IN')}</td>`:`<td style="color:var(--green)">₹${r.tInc.toLocaleString('en-IN')}</td><td style="color:var(--red)">₹${r.tExp.toLocaleString('en-IN')}</td>`}
+        <td style="font-weight:800;color:${r.tNet>=0?'var(--green)':'var(--red)'}">₹${r.tNet.toLocaleString('en-IN')}</td>
+      </tr>`).join('')}
+      <tr style="background:var(--gray-50);font-weight:700">
+        <td><b>TOTAL</b></td>
+        ${bldgs.length>1?bldgs.map(b=>{const bInc=rows.reduce((s,r)=>s+(r.bData[bldgs.indexOf(b)]?.net||0),0);return`<td style="color:${bInc>=0?'var(--green)':'var(--red)'}">₹${bInc.toLocaleString('en-IN')}</td>`;}).join('')+`<td style="color:var(--green)">₹${gInc.toLocaleString('en-IN')}</td><td style="color:var(--red)">₹${gExp.toLocaleString('en-IN')}</td>`:`<td style="color:var(--green)">₹${gInc.toLocaleString('en-IN')}</td><td style="color:var(--red)">₹${gExp.toLocaleString('en-IN')}</td>`}
+        <td style="font-weight:900;color:${gNet>=0?'var(--green)':'var(--red)'}">₹${gNet.toLocaleString('en-IN')}</td>
+      </tr>
+    </table></div>`;
+}
+
+async function exportAnnualExcel(){
+  const yr=document.getElementById('apl-year')?.value;if(!yr)return;
+  const bldgs=window._aplBldgs||[];
+  const allBills=window._aplAllBills||[];const allExp=window._aplAllExp||[];const allFlats=window._aplAllFlats||[];
+  const months=Array.from({length:12},(_,i)=>`${yr}-${String(i+1).padStart(2,'0')}`);
+  const wb=XLSX.utils.book_new();
+  const rows=months.flatMap(mon=>bldgs.map(bldg=>{
+    const bIds=new Set(allFlats.filter(f=>f.block===bldg).map(f=>f.id));
+    const bBills=allBills.filter(b=>b.month===mon&&bIds.has(b.flatId));
+    const inc=bBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0)+bBills.reduce((s,b)=>s+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0)+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0),0);
+    const exp=allExp.filter(e=>e.month===mon&&e.building===bldg).reduce((s,e)=>s+e.amount,0);
+    return{'Year':yr,'Month':mon,'Building':bldg,'Income':inc,'Expenses':exp,'Net Profit':inc-exp};
+  }));
+  const ws=XLSX.utils.json_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,'Annual_PL');
+  XLSX.writeFile(wb,`Annual_PL_${yr}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast('✅ Annual P&L exported!');
+}
+
+async function exportAnnualPDF(){
+  const yr=document.getElementById('apl-year')?.value;
+  const society=await getSetting('society','Society Management');
+  const bldgs=window._aplBldgs||[];
+  const el=document.getElementById('apl-body');
+  if(!el||!yr)return;
+  const now=new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+  const tableHTML=el.querySelector('.rtable')?.outerHTML||'';
+  const summaryHTML=el.children[0]?.outerHTML||'';
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Annual P&L ${yr}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:12px;padding:24px;color:#111}
+  h1{font-size:20px;font-weight:900;color:#1a3a5c;margin-bottom:4px}
+  .sub{font-size:12px;color:#6b7280;margin-bottom:18px}
+  table{border-collapse:collapse;width:100%}
+  th{background:#f3f4f6;padding:7px 9px;font-size:11px;text-transform:uppercase;letter-spacing:.3px;text-align:left}
+  td{padding:7px 9px;border-bottom:1px solid #f3f4f6}
+  .srow{display:flex;gap:12px;margin-bottom:16px}
+  .scard{flex:1;border:1.5px solid #e5e7eb;border-radius:8px;padding:10px;text-align:center}
+  .snum{font-size:16px;font-weight:900}
+  .slbl{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+  @media print{@page{size:A4 landscape;margin:10mm} button{display:none}}
+</style></head><body>
+<h1>📅 Annual P&L — ${yr}</h1>
+<div class="sub">${esc(society)} &nbsp;·&nbsp; Generated: ${now}</div>
+${summaryHTML}${tableHTML}
+<div style="margin-top:16px;text-align:center">
+  <button onclick="window.print()" style="background:#1a3a5c;color:white;border:none;padding:9px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">🖨️ Print / Save PDF</button>
+</div>
+</body></html>`;
+  const win=window.open('','_blank');
+  if(win){win.document.write(html);win.document.close();setTimeout(()=>{try{win.focus();win.print();}catch(e){}},500);}
+  else toast('⚠️ Allow popups to export PDF');
+}
+
+// ═══════════════════════════════════════════
+// PUSH NOTIFICATIONS
+// ═══════════════════════════════════════════
+async function setupNotifications(){
+  if(!('Notification' in window)){toast('⚠️ Notifications not supported on this browser');return;}
+  const perm=await Notification.requestPermission();
+  if(perm==='granted'){
+    await setSetting('notifEnabled','1');
+    toast('✅ Notifications enabled!');
+    scheduleNotifications();
+  } else {
+    toast('⚠️ Notification permission denied');
+  }
+}
+
+async function scheduleNotifications(){
+  if(Notification.permission!=='granted') return;
+  const enabled=await getSetting('notifEnabled','0');
+  if(enabled!=='1') return;
+  const today=new Date();today.setHours(0,0,0,0);
+  const thresh=parseInt(await getSetting('expiryDays','60'));
+  const society=await getSetting('society','TMS');
+
+  // Overdue rents
+  const bills=await ga('billing');
+  const overdue=bills.filter(b=>['Pending','Overdue'].includes(b.rentStatus));
+  if(overdue.length>0){
+    new Notification(`${society} — Rent Reminder`,{body:`${overdue.length} flat(s) have pending/overdue rent`,icon:'',tag:'overdue'});
+  }
+
+  // Expiring agreements
+  const tenants=await ga('tenants');
+  const expiring=tenants.filter(t=>{
+    if(!t.agreementEnd) return false;
+    return (new Date(t.agreementEnd)-today)/86400000<=thresh;
+  });
+  if(expiring.length>0){
+    new Notification(`${society} — Agreements Expiring`,{body:`${expiring.length} tenant agreement(s) expiring soon`,icon:'',tag:'expiry'});
+  }
+
+  // Open maintenance
+  const maint=await ga('maintenance');
+  const openMaint=maint.filter(m=>m.status==='Open');
+  if(openMaint.length>0){
+    new Notification(`${society} — Maintenance`,{body:`${openMaint.length} open maintenance request(s)`,icon:'',tag:'maintenance'});
+  }
+}
+
+async function openNotificationSettings(){
+  const enabled=await getSetting('notifEnabled','0');
+  const perm=('Notification' in window)?Notification.permission:'not-supported';
+  openModal('🔔 Notifications',`
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:14px">
+      Get browser notifications for overdue rents, expiring agreements, and open maintenance requests.
+    </div>
+    <div style="background:var(--${perm==='granted'?'green':'amber'}-lt);border-radius:9px;padding:10px 13px;margin-bottom:14px;font-size:12px;font-weight:700;color:var(--${perm==='granted'?'green':'amber'})">
+      Permission: ${perm==='granted'?'✅ Granted':perm==='denied'?'❌ Denied (enable in browser settings)':'⏳ Not requested'}
+    </div>
+    ${perm!=='granted'?`<button class="btn btn-primary btn-full" onclick="setupNotifications()">🔔 Enable Notifications</button>`:
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+      <button class="btn btn-primary btn-full" onclick="scheduleNotifications();toast('✅ Test notification sent!')">📢 Test Now</button>
+      <button class="btn btn-ghost btn-full" onclick="setSetting('notifEnabled','0');toast('🔕 Disabled');closeModal()">🔕 Disable</button>
+    </div>`}
+  `);
+}
+
+// ═══════════════════════════════════════════
+// GOOGLE DRIVE AUTO-BACKUP
+// ═══════════════════════════════════════════
+async function openDriveBackupSettings(){
+  openModal('☁️ Google Drive Backup',`
+    <div style="background:var(--green-lt);border-radius:9px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--green);font-weight:700">
+      ✅ Google Drive is connected
+    </div>
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:14px">
+      Back up your TMS Excel file directly to Google Drive. The file includes all flats, tenants, billing, water readings, expenses and settings.
+    </div>
+    <button class="btn btn-primary btn-full" onclick="backupToDrive()" style="margin-bottom:9px">☁️ Backup to Drive Now</button>
+    <button class="btn btn-ghost btn-full" onclick="closeModal();openBackupSettings()">⚙️ Backup Schedule Settings</button>
+  `);
+}
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 async function init(){
+  applyDarkMode();        // apply dark mode before anything renders
+  checkPinOnLoad();       // show PIN screen if set
   await initDB();
   updateBuildingBar();
   renderDash();
-  // Check backup reminder after a short delay so UI loads first
-  setTimeout(checkBackupReminder, 1500);
+  setTimeout(async()=>{
+    checkBackupReminder();
+    scheduleNotifications();  // send any due notifications
+    // Update maintenance badge
+    const maint=await ga('maintenance');
+    const openCount=maint.filter(m=>m.status==='Open'||m.status==='In Progress').length;
+    const sub=document.getElementById('maint-badge-sub');
+    if(sub&&openCount>0) sub.textContent=`${openCount} open request${openCount!==1?'s':''}`;
+  },1500);
 }
 init();
 </script>
