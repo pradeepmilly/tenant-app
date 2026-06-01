@@ -267,6 +267,13 @@ textarea.fc{resize:vertical;min-height:72px}
   <button id="bldg-bar-clear" onclick="setBuilding('All')">✕ Show All</button>
 </div>
 
+<!-- Backup reminder bar -->
+<div id="backup-bar" style="display:none;background:#7c3aed;color:white;padding:7px 14px;flex-shrink:0;align-items:center;justify-content:space-between;gap:8px">
+  <span id="backup-bar-label" style="font-size:12px;font-weight:700;flex:1"></span>
+  <button onclick="exportExcel();markBackupDone()" style="background:rgba(255,255,255,.2);border:none;color:white;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;cursor:pointer;white-space:nowrap;flex-shrink:0">📊 Backup Now</button>
+  <button onclick="dismissBackupBar()" style="background:none;border:none;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;padding:0 2px;flex-shrink:0">✕</button>
+</div>
+
 <div id="main">
   <div class="pg active" id="pg-dash"><div id="dash-content"></div></div>
   <div class="pg" id="pg-flats">
@@ -287,6 +294,15 @@ textarea.fc{resize:vertical;min-height:72px}
       <button onclick="chMonth(-1)">‹</button>
       <span class="mlbl" id="mlbl"></span>
       <button onclick="chMonth(1)">›</button>
+    </div>
+    <div class="chips" id="bill-chips">
+      <button class="chip active" onclick="setBillFilter('All',this)">All</button>
+      <button class="chip" onclick="setBillFilter('Paid',this)">✅ Paid</button>
+      <button class="chip" onclick="setBillFilter('Pending',this)">⏳ Pending</button>
+      <button class="chip" onclick="setBillFilter('Overdue',this)">🔴 Overdue</button>
+      <button class="chip" onclick="setBillFilter('NoEntry',this)">➕ No Entry</button>
+      <button class="chip" onclick="setBillFilter('WaterPending',this)">💧 Water Due</button>
+      <button class="chip" onclick="setBillFilter('ElecPending',this)">⚡ Elec Due</button>
     </div>
     <div id="bill-summary"></div>
     <div id="acct-summary"></div>
@@ -317,6 +333,7 @@ textarea.fc{resize:vertical;min-height:72px}
     <div class="sh" style="margin-top:16px"><span class="st">Settings & Data</span></div>
     <div class="more-grid">
       <div class="mcard" onclick="openSettings()"><div class="mico">⚙️</div><div class="mtxt">Settings</div><div class="msub">Society, WA, accounts</div></div>
+      <div class="mcard" onclick="openBackupSettings()"><div class="mico">💾</div><div class="mtxt">Backup & Restore</div><div class="msub">Schedule, export, import</div></div>
       <div class="mcard" onclick="exportExcel()"><div class="mico">📊</div><div class="mtxt">Export Excel</div><div class="msub">Download all data</div></div>
       <div class="mcard" onclick="document.getElementById('import-file').click()"><div class="mico">📥</div><div class="mtxt">Import Excel</div><div class="msub">Flats, tenants, billing</div></div>
       <div class="mcard" onclick="showImportGuide()"><div class="mico">📋</div><div class="mtxt">Import Guide</div><div class="msub">Column format & template</div></div>
@@ -419,6 +436,7 @@ async function setSetting(key,value){
 let tab='dash',editId=null,confirmFn=null;
 let cMonth=new Date().getMonth(),cYear=new Date().getFullYear();
 let flatFilter='All';
+let billFilter='All';
 let activeBuilding='All'; // global building filter — persists across all tabs
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const monthKey=()=>`${cYear}-${String(cMonth+1).padStart(2,'0')}`;
@@ -563,6 +581,13 @@ function setFlatFilter(v,chipsId,el){
   flatFilter=v;
   document.getElementById(chipsId).querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
   el.classList.add('active');
+}
+
+function setBillFilter(v,el){
+  billFilter=v;
+  document.getElementById('bill-chips').querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderBilling();
 }
 
 // ═══════════════════════════════════════════
@@ -1156,7 +1181,27 @@ async function renderBilling(){
     document.getElementById('bill-list').innerHTML=`<div class="empty"><div class="eico">💰</div><div class="etitle">${activeBuilding!=='All'?'No occupied flats in '+activeBuilding:'No occupied flats'}</div><div class="esub">${activeBuilding!=='All'?'Try switching building or mark flats as Occupied':'Mark flats as Occupied first'}</div></div>`;return;
   }
 
-  document.getElementById('bill-list').innerHTML=occFlats.map(fl=>{
+  // Apply bill status filter
+  const filteredFlats=occFlats.filter(fl=>{
+    const bill=mBills.find(b=>b.flatId===fl.id);
+    if(billFilter==='All')          return true;
+    if(billFilter==='Paid')         return bill?.rentStatus==='Paid';
+    if(billFilter==='Pending')      return bill?.rentStatus==='Pending';
+    if(billFilter==='Overdue')      return bill?.rentStatus==='Overdue';
+    if(billFilter==='NoEntry')      return !bill;
+    if(billFilter==='WaterPending') return bill?.waterAmount>0&&bill?.waterStatus!=='Paid';
+    if(billFilter==='ElecPending')  return bill?.elecAmount>0&&bill?.elecStatus!=='Paid';
+    return true;
+  });
+
+  if(filteredFlats.length===0){
+    const labels={Paid:'No paid entries yet',Pending:'No pending entries',Overdue:'No overdue entries',
+      NoEntry:'All flats have entries',WaterPending:'No pending water bills',ElecPending:'No pending electricity bills'};
+    document.getElementById('bill-list').innerHTML=`<div class="empty"><div class="eico">🔍</div><div class="etitle">${labels[billFilter]||'No results'}</div><div class="esub">Try a different filter</div></div>`;
+    return;
+  }
+
+  document.getElementById('bill-list').innerHTML=filteredFlats.map(fl=>{
     const bill=mBills.find(b=>b.flatId===fl.id);
     const ten=tenants.find(t=>t.flatId===fl.id);
     const isPaid=bill?.rentStatus==='Paid';
@@ -1501,6 +1546,11 @@ function chMonth(d){
   cMonth+=d;
   if(cMonth>11){cMonth=0;cYear++}
   if(cMonth<0){cMonth=11;cYear--}
+  // Reset filter to All when changing month
+  billFilter='All';
+  document.getElementById('bill-chips')?.querySelectorAll('.chip').forEach((c,i)=>{
+    c.classList.toggle('active',i===0);
+  });
   renderBilling();
 }
 
@@ -1551,31 +1601,90 @@ async function runMarkPaid(){
 }
 
 async function doAddNextMonth(){
+  // Default to next month but let the user pick any month
   const today=new Date();
   const nxtM=new Date(today.getFullYear(),today.getMonth()+1,1);
-  const nxtKey=`${nxtY=nxtM.getFullYear()}-${String(nxtM.getMonth()+1).padStart(2,'0')}`;
-  const nxtLabel=`${MONTHS[nxtM.getMonth()]} ${nxtM.getFullYear()}`;
-  const allFlats=await ga('flats');
-  const flats=filterByBuilding(allFlats); // scoped to building
-  const bills=await ga('billing');
-  const occ=flats.filter(f=>f.status==='Occupied');
-  const existing=bills.filter(b=>b.month===nxtKey);
-  const toAdd=occ.filter(f=>!existing.find(b=>b.flatId===f.id));
+  const nxtKey=`${nxtM.getFullYear()}-${String(nxtM.getMonth()+1).padStart(2,'0')}`;
+  const scopeNote=activeBuilding!=='All'?` · ${activeBuilding}`:'';
 
-  const scopeNote=activeBuilding!=='All'?` in ${activeBuilding}`:'';
-  if(toAdd.length===0){toast(`ℹ️ All rows for ${nxtLabel}${scopeNote} already exist`);return}
+  openModal('📅 Add Billing Rows',`
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:14px">
+      Creates a <b>Pending</b> billing entry for every occupied flat that doesn't yet have one for the selected month.
+    </div>
+    <div class="fg"><label class="fl">Select Month *</label>
+      <input class="fc" id="anm-month" type="month" value="${nxtKey}" oninput="previewAddMonth()">
+    </div>
+    <div id="anm-preview" style="margin-bottom:12px"></div>
+    <button class="btn btn-primary btn-full" onclick="runAddMonth()">📅 Create Pending Entries</button>
+  `);
+  // Show preview immediately
+  setTimeout(previewAddMonth, 80);
+}
 
-  showConfirm(`Add ${nxtLabel} Rows`,
-    `Create billing rows for ${toAdd.length} occupied flat(s)${scopeNote} for ${nxtLabel}?`,
-    async()=>{
-      for(const fl of toAdd){
-        await add('billing',{flatId:fl.id,month:nxtKey,rentDue:parseFloat(fl.rent)||0,
-          rentPaid:0,rentStatus:'Pending',waterUnits:0,waterRate:0.10,waterAmount:0,
-          elecUnits:0,elecAmount:0,elecStatus:'Pending',total:parseFloat(fl.rent)||0,
-          account:'',paidDate:'',notes:'',createdAt:new Date().toISOString()});
-      }
-      toast(`✅ ${toAdd.length} rows added for ${nxtLabel}`);
-    },'Add Rows','📅');
+async function previewAddMonth(){
+  const month = document.getElementById('anm-month')?.value;
+  const el    = document.getElementById('anm-preview');
+  if(!month||!el) return;
+
+  const allFlats = await ga('flats');
+  const flats    = filterByBuilding(allFlats);
+  const bills    = await ga('billing');
+  const occ      = flats.filter(f=>f.status==='Occupied');
+  const existing = bills.filter(b=>b.month===month);
+  const toAdd    = occ.filter(f=>!existing.find(b=>b.flatId===f.id));
+  const alrDone  = occ.filter(f=> existing.find(b=>b.flatId===f.id));
+  const label    = `${MONTHS[parseInt(month.split('-')[1])-1]} ${month.split('-')[0]}`;
+  const scopeNote= activeBuilding!=='All'?` in ${activeBuilding}`:'';
+
+  if(toAdd.length===0){
+    el.innerHTML=`<div style="background:var(--green-lt);border-radius:9px;padding:10px 13px;font-size:13px;color:#15803d;font-weight:700">
+      ✅ All ${occ.length} occupied flat(s)${scopeNote} already have entries for ${label}
+    </div>`;
+    return;
+  }
+
+  el.innerHTML=`
+    <div style="background:var(--blue-lt);border-radius:9px;padding:10px 13px;margin-bottom:8px;font-size:13px;color:var(--blue)">
+      <b>${toAdd.length} flat(s)</b> will get a new Pending entry for <b>${label}</b>${scopeNote}
+      ${alrDone.length>0?`<div style="font-size:11px;margin-top:4px;opacity:.8">${alrDone.length} flat(s) already have entries and will be skipped</div>`:''}
+    </div>
+    <div style="font-size:12px;color:var(--gray-600);max-height:140px;overflow-y:auto;background:var(--gray-50);border-radius:8px;padding:8px 10px">
+      ${toAdd.map(f=>`<div style="padding:3px 0;border-bottom:1px solid var(--gray-200)">🏠 ${esc(f.block)} — ${esc(f.flatNo)} &nbsp;<span style="color:var(--gray-400)">₹${(parseFloat(f.rent)||0).toLocaleString('en-IN')}/mo</span></div>`).join('')}
+    </div>`;
+}
+
+async function runAddMonth(){
+  const month = document.getElementById('anm-month')?.value;
+  if(!month){toast('⚠️ Select a month');return}
+
+  const allFlats = await ga('flats');
+  const flats    = filterByBuilding(allFlats);
+  const bills    = await ga('billing');
+  const occ      = flats.filter(f=>f.status==='Occupied');
+  const existing = bills.filter(b=>b.month===month);
+  const toAdd    = occ.filter(f=>!existing.find(b=>b.flatId===f.id));
+  const label    = `${MONTHS[parseInt(month.split('-')[1])-1]} ${month.split('-')[0]}`;
+
+  if(toAdd.length===0){
+    toast(`ℹ️ All entries for ${label} already exist`);
+    closeModal();return;
+  }
+
+  for(const fl of toAdd){
+    await add('billing',{flatId:fl.id,month,rentDue:parseFloat(fl.rent)||0,
+      rentPaid:0,rentStatus:'Pending',waterUnits:0,waterRate:0.10,waterAmount:0,
+      waterStatus:'Pending',elecUnits:0,elecAmount:0,elecStatus:'Pending',
+      totalDue:parseFloat(fl.rent)||0,total:0,
+      account:'',paidDate:'',notes:'',createdAt:new Date().toISOString()});
+  }
+  toast(`✅ ${toAdd.length} entries added for ${label}`);
+  closeModal();
+  // Switch billing view to the selected month
+  const [y,m]=month.split('-').map(Number);
+  cYear=y;cMonth=m-1;
+  billFilter='All';
+  document.getElementById('bill-chips')?.querySelectorAll('.chip').forEach((c,i)=>c.classList.toggle('active',i===0));
+  renderBilling();renderDash();
 }
 
 async function doOverdueWA(){
@@ -2753,12 +2862,101 @@ function getPrevMonthKey(monthKey){
 }
 
 // ═══════════════════════════════════════════
+// BACKUP REMINDER
+// ═══════════════════════════════════════════
+
+async function checkBackupReminder(){
+  const freq    = await getSetting('backupFreq','7');   // days, 0 = disabled
+  if(freq==='0') return;
+  const lastStr = await getSetting('lastBackup','');
+  const now     = Date.now();
+  const days    = parseInt(freq)||7;
+  const due     = !lastStr || (now - new Date(lastStr).getTime()) > days*86400000;
+  if(!due) return;
+
+  const bar   = document.getElementById('backup-bar');
+  const label = document.getElementById('backup-bar-label');
+  if(!bar||!label) return;
+
+  const daysSince = lastStr ? Math.floor((now-new Date(lastStr).getTime())/86400000) : null;
+  label.textContent = daysSince===null
+    ? '💾 No backup yet — tap to export all your data'
+    : `💾 Last backup ${daysSince} day${daysSince!==1?'s':''} ago — time for a fresh one`;
+  bar.style.display='flex';
+}
+
+async function markBackupDone(){
+  await setSetting('lastBackup', new Date().toISOString());
+  document.getElementById('backup-bar').style.display='none';
+  toast('✅ Backup downloaded!');
+}
+
+function dismissBackupBar(){
+  document.getElementById('backup-bar').style.display='none';
+  // Snooze for 1 day
+  setSetting('lastBackup', new Date(Date.now()-6*86400000).toISOString());
+}
+
+async function openBackupSettings(){
+  const freq    = await getSetting('backupFreq','7');
+  const lastStr = await getSetting('lastBackup','');
+  const lastFmt = lastStr ? new Date(lastStr).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Never';
+
+  openModal('💾 Backup & Restore',`
+    <div style="background:var(--purple-lt);border-radius:9px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--purple)">
+      <b>Last backup:</b> ${lastFmt}
+    </div>
+
+    <div class="setting-item">
+      <label class="setting-label">🔔 Auto-remind every</label>
+      <select class="fc" id="bk-freq">
+        <option value="0"  ${freq==='0'?'selected':''}>Disabled</option>
+        <option value="1"  ${freq==='1'?'selected':''}>Every day</option>
+        <option value="3"  ${freq==='3'?'selected':''}>Every 3 days</option>
+        <option value="7"  ${freq==='7'?'selected':''}>Every week (recommended)</option>
+        <option value="14" ${freq==='14'?'selected':''}>Every 2 weeks</option>
+        <option value="30" ${freq==='30'?'selected':''}>Every month</option>
+      </select>
+      <div style="font-size:11px;color:var(--gray-400);margin-top:5px">A reminder bar appears at the top of the app when a backup is due</div>
+    </div>
+
+    <button class="btn btn-purple btn-full" onclick="saveBackupFreq()">💾 Save</button>
+
+    <div style="margin-top:16px;border-top:1px solid var(--gray-100);padding-top:14px">
+      <div class="sh" style="margin-bottom:10px"><span class="st">Manual Backup & Restore</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+        <button class="btn btn-primary btn-full" onclick="exportExcel();markBackupDone()">📊 Export Excel</button>
+        <button class="btn btn-ghost btn-full" onclick="exportSettings()">⚙️ Export Settings</button>
+      </div>
+      <button class="btn btn-ghost btn-full" style="margin-top:9px;color:var(--purple)" onclick="closeModal();document.getElementById('import-file').click()">📥 Restore from Backup</button>
+    </div>
+
+    <div style="margin-top:14px;background:var(--blue-lt);border-radius:9px;padding:11px 13px;font-size:12px;color:var(--blue)">
+      <b>💡 To back up to Google Drive or phone:</b><br>
+      1. Tap <b>Export Excel</b> above — file downloads to your device<br>
+      2. Open your Files / Google Drive app<br>
+      3. Move the downloaded file to your Drive or phone backup folder<br>
+      <div style="margin-top:6px;opacity:.8">The exported file includes all flats, tenants, billing, water readings and settings in one Excel file.</div>
+    </div>
+  `);
+}
+
+async function saveBackupFreq(){
+  await setSetting('backupFreq', document.getElementById('bk-freq').value);
+  toast('✅ Backup schedule saved');
+  closeModal();
+  checkBackupReminder();
+}
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 async function init(){
   await initDB();
   updateBuildingBar();
   renderDash();
+  // Check backup reminder after a short delay so UI loads first
+  setTimeout(checkBackupReminder, 1500);
 }
 init();
 </script>
