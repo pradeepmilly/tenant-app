@@ -1903,6 +1903,12 @@ async function openSettings(){
       <textarea class="fc" id="s-accounts" style="min-height:80px">${esc(accounts)}</textarea>
     </div>
     <button class="btn btn-primary btn-full" onclick="saveSettings()" style="margin-top:4px">💾 Save Settings</button>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-ghost btn-full" onclick="exportSettings()" style="font-size:12px">📤 Export Settings</button>
+      <button class="btn btn-ghost btn-full" onclick="document.getElementById('settings-import-file').click()" style="font-size:12px">📥 Import Settings</button>
+    </div>
+    <input type="file" id="settings-import-file" accept=".json" style="display:none" onchange="importSettings(this)">
+    <div style="font-size:11px;color:var(--gray-400);text-align:center;margin-top:6px">Export saves a .json backup · Import restores from a backup file</div>
   `);
 }
 
@@ -1913,6 +1919,53 @@ async function saveSettings(){
   await setSetting('blocks',document.getElementById('s-blocks').value.trim());
   await setSetting('accounts',document.getElementById('s-accounts').value.trim());
   toast('✅ Settings saved');closeModal();renderDash();
+}
+
+// All recognised setting keys and their defaults
+const SETTING_KEYS=[
+  {key:'society',   label:'Society / Building Name', default:'Society Management'},
+  {key:'countryCode',label:'Country Code',           default:'91'},
+  {key:'expiryDays', label:'Expiry Alert Days',      default:'60'},
+  {key:'blocks',     label:'Blocks / Buildings',     default:'Block A,Block B,Block C'},
+  {key:'accounts',   label:'Payment Accounts',       default:'Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque'},
+  {key:'waterRate',  label:'Water Rate (₹/unit)',    default:'0.10'},
+];
+
+async function exportSettings(){
+  const out={_exported:new Date().toISOString(),_version:'TMS-Settings-v1'};
+  for(const s of SETTING_KEYS) out[s.key]=await getSetting(s.key,s.default);
+  const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`TMS_Settings_${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  toast('✅ Settings exported!');
+}
+
+async function importSettings(input){
+  const file=input.files[0];
+  if(!file) return;
+  input.value='';
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    if(!data._version||!data._version.startsWith('TMS-Settings')){
+      toast('❌ Not a valid TMS settings file');return;
+    }
+    let imported=0;
+    for(const s of SETTING_KEYS){
+      if(data[s.key]!==undefined){
+        await setSetting(s.key,String(data[s.key]));
+        imported++;
+      }
+    }
+    toast(`✅ ${imported} settings imported`);
+    closeModal();
+    openSettings(); // reopen to show restored values
+    renderDash();
+  }catch(e){
+    toast('❌ Could not read file: '+e.message);
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -1954,6 +2007,13 @@ async function exportExcel(){
   const ws3=XLSX.utils.json_to_sheet(bills.map(b=>{const fl=allFlats.find(f=>f.id===b.flatId);const ten=allTenants.find(t=>t.flatId===b.flatId);return{'Month':b.month,'Block':fl?.block||'','Flat':fl?.flatNo||'','Tenant':ten?.name||'','Rent Due':b.rentDue,'Rent Paid':b.rentPaid,'Rent Status':b.rentStatus,'Water Units':b.waterUnits,'Water Rate':b.waterRate,'Water Amt':b.waterAmount,'Elec Units':b.elecUnits,'Elec Amt':b.elecAmount,'Elec Status':b.elecStatus,'Total':b.total,'Account':b.account||'','Date':b.paidDate||'','Notes':b.notes||''}}));
   XLSX.utils.book_append_sheet(wb,ws3,'Billing');
 
+  // Settings sheet
+  const settingsRows=[];
+  for(const s of SETTING_KEYS) settingsRows.push({'Setting':s.label,'Key':s.key,'Value':await getSetting(s.key,s.default)});
+  const ws4=XLSX.utils.json_to_sheet(settingsRows);
+  ws4['!cols']=[{wch:28},{wch:16},{wch:50}];
+  XLSX.utils.book_append_sheet(wb,ws4,'Settings');
+
   const suffix=activeBuilding!=='All'?`_${activeBuilding.replace(/\s+/g,'_')}`:'';
   XLSX.writeFile(wb,`TMS${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
   toast('✅ Excel downloaded!');
@@ -1982,8 +2042,13 @@ function showImportGuide(){
       <div style="font-size:11px;background:var(--gray-100);border-radius:7px;padding:8px 10px;font-family:monospace;line-height:1.9">
         Month · Block · Flat · Rent Due · Rent Paid · Rent Status · Water Units · Water Rate · Water Amt · Elec Units · Elec Amt · Elec Status · Total · Account · Date · Notes
       </div>
+      <div style="margin:10px 0 4px;font-weight:800;color:var(--teal)">💧 Water_Readings (Water Meter)</div>
+      <div style="font-size:11px;background:var(--gray-100);border-radius:7px;padding:8px 10px;font-family:monospace;line-height:1.9">
+        Month · Block · Flat No. · Previous Reading · Current Reading · Units Used · Rate (₹/unit) · Bill Amount (₹) · Reading Date · Notes
+      </div>
       <div style="margin-top:12px;font-size:12px;color:var(--gray-500)">
-        ⚠️ Import adds new records — it does <b>not</b> delete existing data. Duplicate flat+month billing entries will be skipped.
+        ⚠️ Import adds new records — it does <b>not</b> delete existing data. Duplicate flat+month entries will be skipped.<br>
+        Month must be in <b>YYYY-MM</b> format (e.g. 2024-01). Dates in YYYY-MM-DD.
       </div>
     </div>
     <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="closeModal();document.getElementById('import-file').click()">📥 Choose File to Import</button>
@@ -2003,6 +2068,10 @@ async function downloadImportTemplate(){
   const ws3=XLSX.utils.aoa_to_sheet([['Month','Block','Flat','Rent Due','Rent Paid','Rent Status','Water Units','Water Rate','Water Amt','Elec Units','Elec Amt','Elec Status','Total','Account','Date','Notes'],
     ['2024-01','Block A','A-101',15000,15000,'Paid',10,0.1,1,50,500,'Paid',15501,'UPI / GPay','2024-01-05','']]);
   XLSX.utils.book_append_sheet(wb,ws3,'Billing');
+  const ws4=XLSX.utils.aoa_to_sheet([['Month','Block','Flat No.','Previous Reading','Current Reading','Units Used','Rate (₹/unit)','Bill Amount (₹)','Reading Date','Notes'],
+    ['2024-01','Block A','A-101',1200,1215,15,0.10,1.50,'2024-01-03',''],
+    ['2024-01','Block A','A-102',980,1002,22,0.10,2.20,'2024-01-03','Meter slightly dirty']]);
+  XLSX.utils.book_append_sheet(wb,ws4,'Water_Readings');
   XLSX.writeFile(wb,'TMS_Import_Template.xlsx');
   toast('✅ Template downloaded!');
 }
@@ -2141,18 +2210,74 @@ async function runImport(wb){
     }
   }
 
+  // ── SETTINGS ──
+  let settingsCount=0;
+  const settingsSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('setting'))||'Settings');
+  if(settingsSheet&&settingsSheet.length>0){
+    const validKeys=new Set(SETTING_KEYS.map(s=>s.key));
+    for(const row of settingsSheet){
+      const key=String(row['Key']||'').trim();
+      const val=String(row['Value']??'').trim();
+      if(key&&validKeys.has(key)&&val!==''){
+        await setSetting(key,val);
+        settingsCount++;
+      }
+    }
+    if(settingsCount>0) renderDash(); // refresh header with new society name
+  }
+
+  // ── WATER READINGS ──
+  let waterCount=0;
+  const waterSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('water'))||'Water_Readings');
+  const allFlats3=await ga('flats');
+  const allWaterNow=await ga('waterReadings');
+  if(waterSheet&&waterSheet.length>0){
+    for(const row of waterSheet){
+      const block  = String(row['Block']||'').trim();
+      const flatNo = String(row['Flat No.']||row['Flat']||'').trim();
+      const month  = _fmtMonth(row['Month']);
+      if(!month||!block||!flatNo){skipped++;continue}
+      const fl=allFlats3.find(f=>
+        f.block.trim().toLowerCase()===block.toLowerCase()&&
+        f.flatNo.trim().toLowerCase()===flatNo.toLowerCase()
+      );
+      if(!fl){errors.push(`Water: flat "${block} — ${flatNo}" not found (Month=${month})`);skipped++;continue}
+      // Skip duplicate flat+month
+      if(allWaterNow.find(r=>r.flatId===fl.id&&r.month===month)){skipped++;continue}
+      const prevReading = parseFloat(row['Previous Reading']||row['Prev Reading']||0);
+      const currReading = parseFloat(row['Current Reading']||row['Curr Reading']||0);
+      const units       = parseFloat(row['Units Used']||row['Units']||(currReading-prevReading))||Math.max(0,currReading-prevReading);
+      const rate        = parseFloat(row['Rate (₹/unit)']||row['Rate']||0.10);
+      const amount      = parseFloat(row['Bill Amount (₹)']||row['Amount']||(units*rate))||parseFloat((units*rate).toFixed(2));
+      await add('waterReadings',{
+        flatId:fl.id, month,
+        previousReading:prevReading,
+        currentReading:currReading,
+        units:parseFloat(units.toFixed(2)),
+        rate,
+        amount:parseFloat(amount.toFixed(2)),
+        readingDate:_fmtDate(row['Reading Date']||row['Date']||''),
+        notes:String(row['Notes']||''),
+        createdAt:new Date().toISOString()
+      });
+      waterCount++;
+    }
+  }
+
   // ── Result ──
-  const total=flatCount+tenantCount+billCount;
+  const total=flatCount+tenantCount+billCount+waterCount+settingsCount;
   if(total===0&&skipped===0&&errors.length===0){
     openModal('📥 Import Result',`<div class="empty"><div class="eico">🤔</div><div class="etitle">Nothing to import</div><div class="esub">No recognised sheets found. Check the Import Guide for column names.</div></div>`);
     return;
   }
 
   openModal('✅ Import Complete',`
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:14px">
-      <div class="scard"><div class="snum" style="color:var(--blue)">${flatCount}</div><div class="slbl">Flats</div></div>
-      <div class="scard"><div class="snum" style="color:var(--green)">${tenantCount}</div><div class="slbl">Tenants</div></div>
-      <div class="scard"><div class="snum" style="color:var(--amber)">${billCount}</div><div class="slbl">Bills</div></div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px">
+      <div class="scard"><div class="snum" style="color:var(--blue);font-size:18px">${flatCount}</div><div class="slbl">Flats</div></div>
+      <div class="scard"><div class="snum" style="color:var(--green);font-size:18px">${tenantCount}</div><div class="slbl">Tenants</div></div>
+      <div class="scard"><div class="snum" style="color:var(--amber);font-size:18px">${billCount}</div><div class="slbl">Bills</div></div>
+      <div class="scard"><div class="snum" style="color:var(--teal);font-size:18px">${waterCount}</div><div class="slbl">Water</div></div>
+      <div class="scard"><div class="snum" style="color:var(--purple);font-size:18px">${settingsCount}</div><div class="slbl">Settings</div></div>
     </div>
     ${skipped>0?`<div style="background:var(--amber-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--amber);font-weight:700;margin-bottom:10px">⏭ ${skipped} row(s) skipped (already exist or missing required fields)</div>`:''}
     ${errors.length>0?`<div style="background:var(--red-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--red);margin-bottom:10px">
