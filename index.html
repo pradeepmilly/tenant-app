@@ -307,6 +307,13 @@ textarea.fc{resize:vertical;min-height:72px}
       <div class="mcard" onclick="showReport('allmonths')"><div class="mico">📈</div><div class="mtxt">All Months</div><div class="msub">Month-by-month summary</div></div>
       <div class="mcard" onclick="showReport('accounts')"><div class="mico">🏦</div><div class="mtxt">Account-wise</div><div class="msub">Collection by bank</div></div>
     </div>
+    <div class="sh" style="margin-top:16px"><span class="st">Water Meter</span></div>
+    <div class="more-grid">
+      <div class="mcard" onclick="openWaterMeter()"><div class="mico">💧</div><div class="mtxt">Take Readings</div><div class="msub">Flat-by-flat sequential entry</div></div>
+      <div class="mcard" onclick="viewWaterHistory()"><div class="mico">📋</div><div class="mtxt">Reading History</div><div class="msub">Past months & bills</div></div>
+      <div class="mcard" onclick="doWaterWA()"><div class="mico">💬</div><div class="mtxt">Send Water Bills</div><div class="msub">WhatsApp one by one</div></div>
+      <div class="mcard" onclick="exportWaterExcel()"><div class="mico">📊</div><div class="mtxt">Export Readings</div><div class="msub">Download as Excel</div></div>
+    </div>
     <div class="sh" style="margin-top:16px"><span class="st">Settings & Data</span></div>
     <div class="more-grid">
       <div class="mcard" onclick="openSettings()"><div class="mico">⚙️</div><div class="mtxt">Settings</div><div class="msub">Society, WA, accounts</div></div>
@@ -357,7 +364,7 @@ textarea.fc{resize:vertical;min-height:72px}
 // DB
 // ═══════════════════════════════════════════
 let db;
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 function initDB(){
   return new Promise((res,rej)=>{
@@ -380,6 +387,11 @@ function initDB(){
       }
       if(!d.objectStoreNames.contains('settings')){
         d.createObjectStore('settings',{keyPath:'key'});
+      }
+      if(!d.objectStoreNames.contains('waterReadings')){
+        const s=d.createObjectStore('waterReadings',{keyPath:'id',autoIncrement:true});
+        s.createIndex('flatId','flatId',{unique:false});
+        s.createIndex('month','month',{unique:false});
       }
     };
     r.onsuccess=e=>{db=e.target.result;res()};
@@ -1162,17 +1174,40 @@ async function renderBilling(){
           ${bill?`<div style="font-size:12px;font-weight:800;margin-top:4px;color:var(--blue)">₹${(parseFloat(bill.total)||0).toLocaleString('en-IN')}</div>`:''}
         </div>
       </div>
-      ${bill?`<div class="util-row" style="font-size:11px;color:var(--gray-600)">
-        ${bill.waterAmount?`💧 Water: ₹${parseFloat(bill.waterAmount).toLocaleString('en-IN')} (${bill.waterUnits||0} units)`:''}
-        ${bill.elecAmount?`⚡ Elec: ₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')} (${bill.elecUnits||0} kWh)`:''}
+      ${bill?`<div class="util-row" style="font-size:11px;color:var(--gray-600);gap:8px">
+        ${bill.waterAmount?`<span style="display:inline-flex;align-items:center;gap:3px;background:${bill.waterStatus==='Paid'?'var(--teal-lt)':'var(--gray-100)'};padding:3px 7px;border-radius:20px;color:${bill.waterStatus==='Paid'?'var(--teal)':'var(--gray-500)'}">💧 ₹${parseFloat(bill.waterAmount).toLocaleString('en-IN')} ${bill.waterStatus==='Paid'?'✓':'⏳'}</span>`:''}
+        ${bill.elecAmount?`<span style="display:inline-flex;align-items:center;gap:3px;background:${bill.elecStatus==='Paid'?'var(--amber-lt)':'var(--gray-100)'};padding:3px 7px;border-radius:20px;color:${bill.elecStatus==='Paid'?'var(--amber)':'var(--gray-500)'}">⚡ ₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')} ${bill.elecStatus==='Paid'?'✓':'⏳'}</span>`:''}
       </div>`:''}
       <div class="cact">
-        ${!isPaid?`<button class="btn btn-sm btn-green btn-full" onclick="quickPaid(${fl.id},${fl.rent},'${mk}',${bill?.id||'null'})">✓ Quick Mark Paid</button>`:''}
+        ${!isPaid?`<button class="btn btn-sm btn-green" onclick="quickPaid(${fl.id},${fl.rent},'${mk}',${bill?.id||'null'})">✓ Mark Rent Paid</button>`:''}
+        ${bill&&bill.waterAmount&&bill.waterStatus!=='Paid'?`<button class="btn btn-sm btn-teal" onclick="quickPayUtil(${bill.id},'water')">💧 Pay Water</button>`:''}
+        ${bill&&bill.elecAmount&&bill.elecStatus!=='Paid'?`<button class="btn btn-sm btn-amber" onclick="quickPayUtil(${bill.id},'elec')">⚡ Pay Elec</button>`:''}
         ${bill?`<button class="btn btn-sm btn-outline" onclick="editBill(${bill.id})">✏️ Edit</button>`:
           `<button class="btn btn-sm btn-amber" onclick="openBillForm(${fl.id})">+ Add Entry</button>`}
       </div>
     </div>`;
   }).join('');
+}
+
+async function quickPayUtil(billId, type){
+  const bill = await g('billing', billId);
+  if(!bill) return;
+  if(type==='water'){
+    bill.waterStatus = 'Paid';
+  } else if(type==='elec'){
+    bill.elecStatus = 'Paid';
+  }
+  // Recompute total collected
+  bill.total = (parseFloat(bill.rentPaid)||0)
+    + (bill.waterStatus==='Paid' ? parseFloat(bill.waterAmount)||0 : 0)
+    + (bill.elecStatus==='Paid'  ? parseFloat(bill.elecAmount)||0  : 0);
+  bill.totalDue = (parseFloat(bill.rentDue)||0)
+    + (parseFloat(bill.waterAmount)||0)
+    + (parseFloat(bill.elecAmount)||0);
+  await put('billing', bill);
+  const label = type==='water'?'💧 Water bill':'⚡ Electricity bill';
+  toast(`✅ ${label} marked as Paid`);
+  renderBilling(); renderDash();
 }
 
 async function quickPaid(flatId,rent,mk,existId){
@@ -1239,7 +1274,7 @@ async function openBillForm(flatId,billData){
     <div id="bill-warn"></div>
     <div class="frow">
       <div class="fg"><label class="fl">Month *</label>
-        <input class="fc" id="bf-month" type="month" value="${f.month||mk}" oninput="checkBillDuplicate()"></div>
+        <input class="fc" id="bf-month" type="month" value="${f.month||mk}" oninput="onBillMonthChange()"></div>
       <div class="fg"><label class="fl">Account / Bank</label>
         <select class="fc" id="bf-acct">${acctOpts}</select></div>
     </div>
@@ -1258,6 +1293,7 @@ async function openBillForm(flatId,billData){
       <div class="fg"><label class="fl">Payment Date</label>
         <input class="fc" id="bf-date" type="date" value="${f.paidDate||new Date().toISOString().split('T')[0]}"></div>
     </div>
+    <div id="water-pull-info"></div>
     <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:var(--teal);text-transform:uppercase;letter-spacing:.5px">— Water Bill —</div>
     <div class="frow3">
       <div class="fg"><label class="fl">Units</label>
@@ -1267,6 +1303,12 @@ async function openBillForm(flatId,billData){
       <div class="fg"><label class="fl">Amount (₹)</label>
         <input class="fc" id="bf-wa" readonly value="${f.waterAmount||0}"></div>
     </div>
+    <label style="display:flex;align-items:center;gap:10px;background:var(--teal-lt);border-radius:9px;padding:10px 13px;margin-bottom:10px;cursor:pointer;font-size:13px;font-weight:700;color:var(--teal)">
+      <input type="checkbox" id="bf-wpaid" style="width:18px;height:18px;accent-color:var(--teal);cursor:pointer" ${f.waterStatus==='Paid'?'checked':''} onchange="calcTotal()">
+      💧 Water Bill Paid
+      <span style="margin-left:auto;font-size:11px;font-weight:600;opacity:.8">tick when tenant pays water separately</span>
+    </label>
+
     <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:.5px">— Electricity —</div>
     <div class="frow">
       <div class="fg"><label class="fl">Units (kWh)</label>
@@ -1274,38 +1316,110 @@ async function openBillForm(flatId,billData){
       <div class="fg"><label class="fl">Amount (₹)</label>
         <input class="fc" id="bf-ea" type="number" value="${f.elecAmount||0}" oninput="calcTotal()"></div>
     </div>
-    <div class="frow">
-      <div class="fg"><label class="fl">Elec Status</label>
-        <select class="fc" id="bf-est">
-          ${['Paid','Pending','Overdue'].map(x=>`<option ${f.elecStatus===x?'selected':''}>${x}</option>`).join('')}
-        </select></div>
-      <div class="fg"><label class="fl">Total Due (₹)</label>
-        <input class="fc" id="bf-total" readonly value="${f.total||0}" style="font-weight:800;color:var(--blue)"></div>
+    <label style="display:flex;align-items:center;gap:10px;background:var(--amber-lt);border-radius:9px;padding:10px 13px;margin-bottom:10px;cursor:pointer;font-size:13px;font-weight:700;color:var(--amber)">
+      <input type="checkbox" id="bf-epaid" style="width:18px;height:18px;accent-color:#d97706;cursor:pointer" ${(f.elecStatus==='Paid')?'checked':''} onchange="calcTotal()">
+      ⚡ Electricity Bill Paid
+      <span style="margin-left:auto;font-size:11px;font-weight:600;opacity:.8">tick when tenant pays elec separately</span>
+    </label>
+
+    <div style="background:var(--gray-50);border-radius:10px;padding:11px 13px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px">
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Total Due (₹)</div>
+        <input class="fc" id="bf-total-due" readonly value="${f.totalDue||f.total||0}" style="font-weight:800;color:var(--gray-600);background:white">
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Total Collected (₹)</div>
+        <input class="fc" id="bf-total" readonly value="${f.total||0}" style="font-weight:800;color:var(--green);background:white">
+      </div>
     </div>
     <div class="fg"><label class="fl">Notes / Cheque No.</label>
       <input class="fc" id="bf-notes" value="${esc(f.notes||'')}"></div>
     <button class="btn btn-amber btn-full" onclick="saveBill()" style="margin-top:4px">${editId?'✅ Update Entry':'💾 Save Entry'}</button>
   `);
   calcTotal();
-  // Check for duplicate on form open when flat is pre-selected
-  if(flatId&&!editId) setTimeout(checkBillDuplicate,100);
+  // On open: pull water reading and check duplicate for pre-selected flat
+  const preFlatId = flatId || (billData?.flatId);
+  if(preFlatId) setTimeout(async()=>{
+    await pullWaterReading(preFlatId);
+    if(!editId) await checkBillDuplicate();
+  },100);
 }
 
 function calcWater(){
-  try{const a=(parseFloat(document.getElementById('bf-wu').value)||0)*(parseFloat(document.getElementById('bf-wr').value)||0);
-    document.getElementById('bf-wa').value=a.toFixed(2);calcTotal();}catch(e){}
+  try{
+    const a=(parseFloat(document.getElementById('bf-wu').value)||0)*(parseFloat(document.getElementById('bf-wr').value)||0);
+    document.getElementById('bf-wa').value=a.toFixed(2);
+    calcTotal();
+  }catch(e){}
 }
 function calcTotal(){
-  try{const t=(parseFloat(document.getElementById('bf-rdue').value)||0)+(parseFloat(document.getElementById('bf-wa').value)||0)+(parseFloat(document.getElementById('bf-ea').value)||0);
-    document.getElementById('bf-total').value=t.toFixed(2);}catch(e){}
+  try{
+    const rentDue  = parseFloat(document.getElementById('bf-rdue')?.value)||0;
+    const rentPaid = parseFloat(document.getElementById('bf-rpaid')?.value)||0;
+    const waterAmt = parseFloat(document.getElementById('bf-wa')?.value)||0;
+    const elecAmt  = parseFloat(document.getElementById('bf-ea')?.value)||0;
+    const wPaid    = document.getElementById('bf-wpaid')?.checked||false;
+    const ePaid    = document.getElementById('bf-epaid')?.checked||false;
+
+    const totalDue       = rentDue + waterAmt + elecAmt;
+    const totalCollected = rentPaid + (wPaid ? waterAmt : 0) + (ePaid ? elecAmt : 0);
+
+    const dueEl = document.getElementById('bf-total-due');
+    const colEl = document.getElementById('bf-total');
+    if(dueEl) dueEl.value = totalDue.toFixed(2);
+    if(colEl) colEl.value = totalCollected.toFixed(2);
+
+    // Visual cue: green when fully settled
+    if(colEl) colEl.style.color = totalCollected >= totalDue ? 'var(--green)' : 'var(--amber)';
+  }catch(e){}
 }
 
 async function onBillFlatSelect(el){
   const id=parseInt(el.value);if(!id)return;
   const fl=await g('flats',id);
   if(fl&&fl.rent)document.getElementById('bf-rdue').value=fl.rent;
+  await pullWaterReading(id);
   calcTotal();
   await checkBillDuplicate();
+}
+
+// Auto-fill water fields from water meter readings for selected flat + month
+async function pullWaterReading(flatId){
+  const month = document.getElementById('bf-month')?.value || monthKey();
+  const allReadings = await ga('waterReadings');
+  const reading = allReadings.filter(r=>r.flatId===flatId&&r.month===month)
+                    .sort((a,b)=>b.id-a.id)[0]; // latest entry for that month
+
+  const wuEl = document.getElementById('bf-wu');
+  const wrEl = document.getElementById('bf-wr');
+  const waEl = document.getElementById('bf-wa');
+  const warnEl = document.getElementById('water-pull-info');
+
+  if(reading){
+    if(wuEl) wuEl.value = reading.units;
+    if(wrEl) wrEl.value = reading.rate;
+    if(waEl) waEl.value = reading.amount.toFixed(2);
+    if(warnEl) warnEl.innerHTML=`<div style="background:var(--teal-lt);border-radius:8px;padding:8px 11px;font-size:12px;color:var(--teal);font-weight:700;margin-bottom:8px">
+      💧 Water reading auto-filled from meter tracker · ${month}<br>
+      <span style="font-weight:400">${reading.previousReading} → ${reading.currentReading} = <b>${reading.units} units × ₹${reading.rate} = ₹${reading.amount.toFixed(2)}</b></span>
+    </div>`;
+    calcWater();
+  } else {
+    // Clear water fields if no reading found (don't overwrite if editing)
+    if(!editId){
+      if(wuEl) wuEl.value=0;
+      if(waEl) waEl.value=0;
+    }
+    if(warnEl) warnEl.innerHTML=`<div style="background:var(--gray-100);border-radius:8px;padding:7px 11px;font-size:11px;color:var(--gray-500);margin-bottom:8px">
+      💧 No water meter reading found for ${month} — enter manually or <span style="color:var(--teal);font-weight:700;cursor:pointer" onclick="closeModal();openWaterMeter()">take readings first</span>
+    </div>`;
+  }
+}
+
+async function onBillMonthChange(){
+  await checkBillDuplicate();
+  const flatId=parseInt(document.getElementById('bf-flat')?.value);
+  if(flatId) await pullWaterReading(flatId);
 }
 
 async function checkBillDuplicate(){
@@ -1342,9 +1456,11 @@ async function saveBill(){
     waterUnits:parseFloat(document.getElementById('bf-wu').value)||0,
     waterRate:parseFloat(document.getElementById('bf-wr').value)||0.10,
     waterAmount:parseFloat(document.getElementById('bf-wa').value)||0,
+    waterStatus:document.getElementById('bf-wpaid')?.checked?'Paid':'Pending',
     elecUnits:parseFloat(document.getElementById('bf-eu').value)||0,
     elecAmount:parseFloat(document.getElementById('bf-ea').value)||0,
-    elecStatus:document.getElementById('bf-est').value,
+    elecStatus:document.getElementById('bf-epaid')?.checked?'Paid':'Pending',
+    totalDue:parseFloat(document.getElementById('bf-total-due')?.value)||0,
     total:parseFloat(document.getElementById('bf-total').value)||0,
     notes:document.getElementById('bf-notes').value.trim(),
     createdAt:new Date().toISOString()
@@ -1985,16 +2101,21 @@ async function runImport(wb){
   // ── BILLING ──
   const billSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('bill'))||'Billing');
   const allFlats2=await ga('flats');
-  const allBillsNow=await ga('billing');
+  let allBillsNow=await ga('billing');
   if(billSheet&&billSheet.length>0){
     for(const row of billSheet){
       const block=String(row['Block']||'').trim();
       const flatNo=String(row['Flat']||row['Flat No.']||'').trim();
-      const month=String(row['Month']||'').trim();
-      if(!month){skipped++;continue}
-      const fl=allFlats2.find(f=>f.block===block&&f.flatNo===flatNo);
-      if(!fl){skipped++;continue}
-      // Skip duplicates
+      const month=_fmtMonth(row['Month']); // handles Date objects & serial numbers
+      if(!month){skipped++;errors.push(`Billing row skipped: missing Month (Block=${block}, Flat=${flatNo})`);continue}
+      if(!block||!flatNo){skipped++;errors.push(`Billing row skipped: missing Block/Flat (Month=${month})`);continue}
+      // Case-insensitive, trimmed flat lookup
+      const fl=allFlats2.find(f=>
+        f.block.trim().toLowerCase()===block.toLowerCase()&&
+        f.flatNo.trim().toLowerCase()===flatNo.toLowerCase()
+      );
+      if(!fl){errors.push(`Billing: flat "${block} — ${flatNo}" not found (Month=${month})`);skipped++;continue}
+      // Skip duplicates (refresh after each add to stay accurate)
       if(allBillsNow.find(b=>b.flatId===fl.id&&b.month===month)){skipped++;continue}
       await add('billing',{
         flatId:fl.id, month,
@@ -2003,17 +2124,20 @@ async function runImport(wb){
         rentStatus:String(row['Rent Status']||'Pending'),
         waterUnits:parseFloat(row['Water Units']||0),
         waterRate:parseFloat(row['Water Rate']||0.10),
-        waterAmount:parseFloat(row['Water Amt']||0),
+        waterAmount:parseFloat(row['Water Amt']||row['Water Amount']||0),
+        waterStatus:String(row['Water Status']||'Pending'),
         elecUnits:parseFloat(row['Elec Units']||0),
-        elecAmount:parseFloat(row['Elec Amt']||0),
+        elecAmount:parseFloat(row['Elec Amt']||row['Elec Amount']||0),
         elecStatus:String(row['Elec Status']||'Pending'),
+        totalDue:parseFloat(row['Total Due']||row['Total']||0),
         total:parseFloat(row['Total']||0),
         account:String(row['Account']||''),
-        paidDate:_fmtDate(row['Date']),
+        paidDate:_fmtDate(row['Date']||row['Paid Date']||''),
         notes:String(row['Notes']||''),
         createdAt:new Date().toISOString()
       });
       billCount++;
+      allBillsNow=await ga('billing'); // keep in sync for duplicate check
     }
   }
 
@@ -2030,8 +2154,13 @@ async function runImport(wb){
       <div class="scard"><div class="snum" style="color:var(--green)">${tenantCount}</div><div class="slbl">Tenants</div></div>
       <div class="scard"><div class="snum" style="color:var(--amber)">${billCount}</div><div class="slbl">Bills</div></div>
     </div>
-    ${skipped>0?`<div style="background:var(--amber-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--amber);font-weight:700;margin-bottom:10px">⏭ ${skipped} row(s) skipped (duplicates or missing required fields)</div>`:''}
-    ${errors.length>0?`<div style="background:var(--red-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--red);margin-bottom:10px"><b>⚠️ ${errors.length} issue(s):</b><br>${errors.slice(0,5).map(e=>`· ${esc(e)}`).join('<br>')}${errors.length>5?`<br>… and ${errors.length-5} more`:''}</div>`:''}
+    ${skipped>0?`<div style="background:var(--amber-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--amber);font-weight:700;margin-bottom:10px">⏭ ${skipped} row(s) skipped (already exist or missing required fields)</div>`:''}
+    ${errors.length>0?`<div style="background:var(--red-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--red);margin-bottom:10px">
+      <b>⚠️ ${errors.length} issue(s) — rows that could not be imported:</b><br>
+      ${errors.slice(0,8).map(e=>`· ${esc(e)}`).join('<br>')}
+      ${errors.length>8?`<br><i>… and ${errors.length-8} more</i>`:''}
+      <div style="margin-top:8px;font-weight:400;color:var(--red)">Tip: Make sure Block/Flat names in the Excel exactly match what's in the app, and Month is in <b>YYYY-MM</b> format (e.g. 2024-01).</div>
+    </div>`:''}
     <div style="font-size:12px;color:var(--gray-500);margin-top:4px">Existing records were not modified. Only new entries were added.</div>
     <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="closeModal();renderDash()">✅ Done</button>
   `);
@@ -2042,12 +2171,460 @@ function _fmtDate(val){
   if(!val) return '';
   if(val instanceof Date) return val.toISOString().split('T')[0];
   const s=String(val).trim();
-  // Handle Excel serial numbers
   if(/^\d{5}$/.test(s)){
     const d=XLSX.SSF.parse_date_code(parseInt(s));
     if(d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
   }
   return s;
+}
+
+// Converts any month value to "YYYY-MM" format
+// Handles: Date objects, Excel serial numbers, "Jan-2024", "January 2024", "2024-01", "01/2024"
+function _fmtMonth(val){
+  if(!val&&val!==0) return '';
+  // JavaScript Date object (happens when cellDates:true and XLSX sees a date-like value)
+  if(val instanceof Date){
+    return `${val.getFullYear()}-${String(val.getMonth()+1).padStart(2,'0')}`;
+  }
+  const s=String(val).trim();
+  if(!s) return '';
+  // Already in YYYY-MM format
+  if(/^\d{4}-\d{2}$/.test(s)) return s;
+  // Excel serial number (5-digit integer)
+  if(/^\d{5}$/.test(s)){
+    const d=XLSX.SSF.parse_date_code(parseInt(s));
+    if(d) return `${d.y}-${String(d.m).padStart(2,'0')}`;
+  }
+  // Try parsing as a date string ("Jan 2024", "January 2024", "01/2024", "2024/01", etc.)
+  const parsed=new Date(s);
+  if(!isNaN(parsed.getTime())){
+    return `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}`;
+  }
+  // "Jan-24" or "Jan-2024" style
+  const shortMatch=s.match(/^([A-Za-z]{3,9})[-\s](\d{2,4})$/);
+  if(shortMatch){
+    const d=new Date(`${shortMatch[1]} 1 ${shortMatch[2].length===2?'20'+shortMatch[2]:shortMatch[2]}`);
+    if(!isNaN(d.getTime())) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  return s; // return as-is and let the caller handle it
+}
+
+// ═══════════════════════════════════════════
+// WATER METER
+// ═══════════════════════════════════════════
+
+// ── Open the Water Meter session starter ────────────────────────────────────
+async function openWaterMeter(){
+  const allFlats = await ga('flats');
+  const buildings = [...new Set(filterByBuilding(allFlats).map(f=>f.block))].sort();
+  const defaultRate = await getSetting('waterRate','0.10');
+  const mk = monthKey();
+
+  const bldgOpts = buildings.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');
+
+  openModal('💧 Water Meter Readings', `
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:14px">
+      Enter the <b>current meter reading</b> for each flat. The app will auto-calculate units used (current − previous) and the bill amount.
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Building *</label>
+        <select class="fc" id="wm-bldg">
+          ${bldgOpts||'<option value="">No buildings</option>'}
+        </select></div>
+      <div class="fg"><label class="fl">Month *</label>
+        <input class="fc" id="wm-month" type="month" value="${mk}"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Rate per Unit (₹)</label>
+        <input class="fc" id="wm-rate" type="number" step="0.01" value="${defaultRate}" placeholder="e.g. 0.10"></div>
+      <div class="fg"><label class="fl">Reading Date</label>
+        <input class="fc" id="wm-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+    </div>
+    <div style="background:var(--blue-lt);border-radius:9px;padding:10px 13px;font-size:12px;color:var(--blue);font-weight:600;margin-bottom:14px">
+      💡 You'll go through each flat <b>one by one</b>. Previous readings are auto-filled from last session.
+    </div>
+    <button class="btn btn-teal btn-full" onclick="startWaterSession()">💧 Start Reading Session →</button>
+  `);
+}
+
+// ── Start the sequential flat-by-flat session ────────────────────────────────
+async function startWaterSession(){
+  const bldg  = document.getElementById('wm-bldg')?.value;
+  const month = document.getElementById('wm-month')?.value;
+  const rate  = parseFloat(document.getElementById('wm-rate')?.value)||0.10;
+  const date  = document.getElementById('wm-date')?.value;
+  if(!bldg||!month){toast('⚠️ Select building and month');return}
+
+  // Save rate as default for future sessions
+  await setSetting('waterRate', String(rate));
+
+  const allFlats = await ga('flats');
+  const flats = allFlats.filter(f=>f.block===bldg).sort((a,b)=>a.flatNo.localeCompare(b.flatNo,'en',{numeric:true}));
+  if(!flats.length){toast('⚠️ No flats in this building');return}
+
+  // Check for existing readings this month
+  const existing = await ga('waterReadings');
+  const doneIds  = new Set(existing.filter(r=>r.month===month&&flats.find(f=>f.id===r.flatId)).map(r=>r.flatId));
+
+  const session = {flats, month, rate, date, bldg, doneIds};
+  const startIdx = flats.findIndex(f=>!doneIds.has(f.id));
+  showWaterEntry(startIdx>=0?startIdx:0, session, existing);
+}
+
+// ── Show reading entry for one flat ─────────────────────────────────────────
+async function showWaterEntry(idx, session, allReadings){
+  const {flats, month, rate, date, bldg, doneIds} = session;
+  const fl = flats[idx];
+  const tenants = await ga('tenants');
+  const tenant  = tenants.find(t=>t.flatId===fl.id);
+
+  // Get previous month's reading for this flat
+  const prevMonthKey = getPrevMonthKey(month);
+  const prevReading  = allReadings.filter(r=>r.flatId===fl.id&&r.month===prevMonthKey)
+                         .sort((a,b)=>b.id-a.id)[0];
+  const prevVal      = prevReading ? prevReading.currentReading : '';
+
+  // Already entered this month?
+  const thisMonth = allReadings.find(r=>r.flatId===fl.id&&r.month===month);
+
+  const done    = idx+1;
+  const total   = flats.length;
+  const pct     = Math.round(doneIds.size/total*100);
+  const skipped = flats.filter(f=>doneIds.has(f.id));
+
+  const progressBar = `
+    <div style="background:var(--gray-100);border-radius:20px;height:8px;overflow:hidden;margin-bottom:6px">
+      <div style="height:100%;border-radius:20px;background:var(--teal);width:${pct}%;transition:width .3s"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-400);margin-bottom:14px">
+      <span>${doneIds.size} of ${total} done</span>
+      <span>${bldg} · ${month}</span>
+    </div>`;
+
+  const flatNav = `
+    <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;scrollbar-width:none">
+      ${flats.map((f,i)=>{
+        const isDone=doneIds.has(f.id);
+        const isCur=i===idx;
+        return`<button onclick="saveWaterAndGoto(${i},${idx},window._wmSession,window._wmReadings)"
+          style="flex-shrink:0;padding:4px 10px;border-radius:20px;border:1.5px solid ${isCur?'var(--teal)':isDone?'var(--green)':'var(--gray-200)'};
+          background:${isCur?'var(--teal)':isDone?'var(--green-lt)':'white'};
+          color:${isCur?'white':isDone?'#15803d':'var(--gray-600)'};
+          font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">${esc(f.flatNo)}</button>`;
+      }).join('')}
+    </div>`;
+
+  openModal(`💧 Water Reading — ${bldg}`,`
+    ${progressBar}${flatNav}
+    <div class="card" style="margin-bottom:14px">
+      <div class="cb crow">
+        <div class="cavatar" style="background:var(--teal);font-size:18px">💧</div>
+        <div class="cinfo">
+          <div class="cname">${esc(fl.block)} — ${esc(fl.flatNo)}</div>
+          <div class="csub">${tenant?esc(tenant.name):'No tenant'} ${tenant?'· 📞 '+esc(tenant.phone||'—'):''}</div>
+        </div>
+        ${thisMonth?`<span class="badge bg-green">✓ Done</span>`:''}
+      </div>
+    </div>
+    ${thisMonth?`<div style="background:var(--green-lt);border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:13px;color:#15803d">
+      ✅ Already entered: <b>${thisMonth.currentReading}</b> units (${thisMonth.units} used · ₹${(thisMonth.amount||0).toLocaleString('en-IN')})
+      <div style="margin-top:5px"><button class="btn btn-sm btn-ghost" onclick="clearWaterEntry(${fl.id},'${month}')">↩ Re-enter</button></div>
+    </div>`:`
+    <div class="frow">
+      <div class="fg"><label class="fl">Previous Reading</label>
+        <input class="fc" id="wm-prev" type="number" value="${prevVal}" placeholder="${prevVal===''?'First reading':''+prevVal}" style="background:var(--gray-50);color:var(--gray-500)" ${prevVal!==''?'readonly':''}></div>
+      <div class="fg"><label class="fl">Current Reading *</label>
+        <input class="fc" id="wm-curr" type="number" placeholder="Enter reading" oninput="calcWaterBill()" autofocus></div>
+    </div>
+    <div id="wm-calc" style="background:var(--teal-lt);border-radius:9px;padding:10px 13px;margin-bottom:12px;display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center">
+        <div><div style="font-size:18px;font-weight:900;color:var(--teal)" id="wm-units">0</div><div style="font-size:10px;color:var(--gray-500);font-weight:700;text-transform:uppercase">Units Used</div></div>
+        <div><div style="font-size:13px;font-weight:700;color:var(--gray-500)">× ₹${rate}/unit</div><div style="font-size:10px;color:var(--gray-500);font-weight:700;text-transform:uppercase">Rate</div></div>
+        <div><div style="font-size:18px;font-weight:900;color:var(--teal)" id="wm-amt">₹0</div><div style="font-size:10px;color:var(--gray-500);font-weight:700;text-transform:uppercase">Bill Amount</div></div>
+      </div>
+    </div>
+    <div class="fg"><label class="fl">Notes (optional)</label>
+      <input class="fc" id="wm-notes" placeholder="e.g. Meter issue, estimated, etc."></div>
+    `}
+    <div style="display:flex;gap:8px;margin-top:4px">
+      ${idx>0?`<button class="btn btn-ghost" onclick="gotoWaterFlat(${idx-1})">‹ Prev</button>`:''}
+      ${!thisMonth?`<button class="btn btn-teal" style="flex:1" onclick="saveWaterReading(${fl.id},'${month}',${rate},'${date}',${idx})">
+        ${idx<total-1?'💾 Save & Next →':'💾 Save & Finish'}
+      </button>`:`<button class="btn btn-primary" style="flex:1" onclick="gotoWaterFlat(${idx<total-1?idx+1:idx})">
+        ${idx<total-1?'Next →':'✅ All Done'}
+      </button>`}
+    </div>
+    ${doneIds.size===total?`<button class="btn btn-ghost btn-full" style="margin-top:8px;color:var(--teal)" onclick="closeModal();doWaterWA()">📲 Send WhatsApp Bills Now</button>`:''}
+  `);
+
+  // Store session in window for nav buttons
+  window._wmSession  = session;
+  window._wmReadings = allReadings;
+  window._wmIdx      = idx;
+}
+
+function calcWaterBill(){
+  const prev = parseFloat(document.getElementById('wm-prev')?.value)||0;
+  const curr = parseFloat(document.getElementById('wm-curr')?.value);
+  const rate  = window._wmSession?.rate||0.10;
+  const calc  = document.getElementById('wm-calc');
+  if(isNaN(curr)){if(calc)calc.style.display='none';return}
+  const units = Math.max(0, curr - prev);
+  const amt   = units * rate;
+  if(calc) calc.style.display='block';
+  const uEl=document.getElementById('wm-units');const aEl=document.getElementById('wm-amt');
+  if(uEl) uEl.textContent=units.toFixed(1);
+  if(aEl) aEl.textContent='₹'+amt.toLocaleString('en-IN',{maximumFractionDigits:2});
+}
+
+async function saveWaterReading(flatId, month, rate, date, idx){
+  const prev  = parseFloat(document.getElementById('wm-prev')?.value)||0;
+  const curr  = parseFloat(document.getElementById('wm-curr')?.value);
+  const notes = document.getElementById('wm-notes')?.value.trim()||'';
+  if(isNaN(curr)||curr===''){toast('⚠️ Enter current reading');return}
+  if(curr < prev){
+    toast('⚠️ Current reading is less than previous — check meter');return;
+  }
+  const units = Math.max(0, curr - prev);
+  const amt   = parseFloat((units * rate).toFixed(2));
+
+  const existing = await ga('waterReadings');
+  const dup = existing.find(r=>r.flatId===flatId&&r.month===month);
+  if(dup){await del('waterReadings',dup.id)}
+
+  await add('waterReadings',{flatId,month,previousReading:prev,currentReading:curr,units,rate,amount:amt,readingDate:date,notes,createdAt:new Date().toISOString()});
+
+  // Mark done in session
+  window._wmSession.doneIds.add(flatId);
+  window._wmReadings = await ga('waterReadings');
+
+  const next = idx+1;
+  const total = window._wmSession.flats.length;
+  if(next < total){
+    showWaterEntry(next, window._wmSession, window._wmReadings);
+  } else {
+    toast('✅ All readings saved!');
+    showWaterSessionSummary(window._wmSession, window._wmReadings);
+  }
+}
+
+async function gotoWaterFlat(idx){
+  window._wmReadings = await ga('waterReadings');
+  showWaterEntry(idx, window._wmSession, window._wmReadings);
+}
+
+async function saveWaterAndGoto(targetIdx, currentIdx, session, readings){
+  // If current flat has unsaved input, save it first silently
+  const currEl = document.getElementById('wm-curr');
+  if(currEl&&currEl.value.trim()!==''){
+    const fl = session.flats[currentIdx];
+    await saveWaterReading(fl.id, session.month, session.rate, session.date, currentIdx-1);
+    return; // saveWaterReading will navigate
+  }
+  gotoWaterFlat(targetIdx);
+}
+
+async function clearWaterEntry(flatId, month){
+  const all = await ga('waterReadings');
+  const rec = all.find(r=>r.flatId===flatId&&r.month===month);
+  if(rec){
+    await del('waterReadings',rec.id);
+    window._wmSession.doneIds.delete(flatId);
+    window._wmReadings = await ga('waterReadings');
+    showWaterEntry(window._wmIdx, window._wmSession, window._wmReadings);
+  }
+}
+
+async function showWaterSessionSummary(session, allReadings){
+  const {flats, month, rate, bldg} = session;
+  const tenants = await ga('tenants');
+  const readings = allReadings.filter(r=>r.month===month&&flats.find(f=>f.id===r.flatId));
+  const total = readings.reduce((s,r)=>s+r.amount,0);
+  const totalUnits = readings.reduce((s,r)=>s+r.units,0);
+
+  openModal(`✅ Session Complete — ${bldg}`,`
+    <div class="srow">
+      <div class="scard"><div class="snum" style="color:var(--teal)">${readings.length}</div><div class="slbl">Flats Read</div></div>
+      <div class="scard"><div class="snum" style="color:var(--blue);font-size:15px">${totalUnits.toFixed(0)}</div><div class="slbl">Total Units</div></div>
+      <div class="scard"><div class="snum" style="color:var(--green);font-size:14px">₹${total.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="slbl">Total Bills</div></div>
+    </div>
+    <div style="margin:10px 0">
+      ${readings.map(r=>{
+        const fl=flats.find(f=>f.id===r.flatId);
+        const ten=tenants.find(t=>t.flatId===r.flatId);
+        return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+          <div>
+            <div style="font-size:13px;font-weight:700">${esc(fl?fl.flatNo:'?')}</div>
+            <div style="font-size:11px;color:var(--gray-500)">${ten?esc(ten.name):''} · ${r.units.toFixed(1)} units · ${r.previousReading}→${r.currentReading}</div>
+          </div>
+          <div style="font-size:13px;font-weight:800;color:var(--teal)">₹${r.amount.toLocaleString('en-IN',{maximumFractionDigits:2})}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-teal btn-full" onclick="closeModal();doWaterWA()">📲 Send WA Bills</button>
+      <button class="btn btn-ghost btn-full" onclick="closeModal();exportWaterExcel()">📊 Export</button>
+    </div>
+  `);
+}
+
+// ── Water Meter Reading History ──────────────────────────────────────────────
+async function viewWaterHistory(){
+  const allReadings = await ga('waterReadings');
+  const allFlats    = await ga('flats');
+  const flatIds     = buildingFlatIds(allFlats);
+  const readings    = allReadings.filter(r=>flatIds.has(r.flatId));
+
+  if(!readings.length){
+    openModal('💧 Reading History',`<div class="empty"><div class="eico">💧</div><div class="etitle">No readings yet</div><div class="esub">Tap "Take Readings" to start</div></div>`);return;
+  }
+
+  // Group by month
+  const byMonth={};
+  for(const r of readings){
+    if(!byMonth[r.month]) byMonth[r.month]={units:0,amount:0,count:0};
+    byMonth[r.month].units+=r.units;byMonth[r.month].amount+=r.amount;byMonth[r.month].count++;
+  }
+  const months=Object.keys(byMonth).sort().reverse();
+
+  openModal('💧 Reading History',`
+    <div class="rtable"><table>
+      <tr><th>Month</th><th>Flats</th><th>Total Units</th><th>Total Bill</th></tr>
+      ${months.map(m=>`<tr style="cursor:pointer" onclick="viewWaterMonth('${m}')">
+        <td><b>${m}</b></td>
+        <td>${byMonth[m].count}</td>
+        <td>${byMonth[m].units.toFixed(1)}</td>
+        <td style="color:var(--teal);font-weight:800">₹${byMonth[m].amount.toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
+      </tr>`).join('')}
+    </table></div>
+    <div style="font-size:11px;color:var(--gray-400);margin-top:8px;text-align:center">Tap a month row to see flat-by-flat breakdown</div>
+  `);
+}
+
+async function viewWaterMonth(month){
+  const allReadings = await ga('waterReadings');
+  const allFlats    = await ga('flats');
+  const tenants     = await ga('tenants');
+  const flatIds     = buildingFlatIds(allFlats);
+  const readings    = allReadings.filter(r=>r.month===month&&flatIds.has(r.flatId))
+                       .sort((a,b)=>{
+                         const fa=allFlats.find(f=>f.id===a.flatId);
+                         const fb=allFlats.find(f=>f.id===b.flatId);
+                         return (fa?.flatNo||'').localeCompare(fb?.flatNo||'','en',{numeric:true});
+                       });
+  const total=readings.reduce((s,r)=>s+r.amount,0);
+  openModal(`💧 ${month} — Water Bills`,`
+    <div class="srow" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
+      <div class="scard"><div class="snum" style="color:var(--teal)">${readings.reduce((s,r)=>s+r.units,0).toFixed(0)}</div><div class="slbl">Total Units</div></div>
+      <div class="scard"><div class="snum" style="font-size:14px;color:var(--green)">₹${total.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="slbl">Total Bills</div></div>
+    </div>
+    <div class="rtable"><table>
+      <tr><th>Flat</th><th>Tenant</th><th>Prev</th><th>Curr</th><th>Units</th><th>Bill</th></tr>
+      ${readings.map(r=>{
+        const fl=allFlats.find(f=>f.id===r.flatId);
+        const ten=tenants.find(t=>t.flatId===r.flatId);
+        return`<tr>
+          <td><b>${esc(fl?fl.flatNo:'?')}</b></td>
+          <td>${esc(ten?ten.name:'—')}</td>
+          <td>${r.previousReading}</td><td>${r.currentReading}</td>
+          <td>${r.units.toFixed(1)}</td>
+          <td style="color:var(--teal);font-weight:800">₹${r.amount.toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+        </tr>`;
+      }).join('')}
+    </table></div>
+  `);
+}
+
+// ── WhatsApp water bill alerts — one by one using existing queue ─────────────
+async function doWaterWA(){
+  const mk = monthKey();
+  const allReadings = await ga('waterReadings');
+  const allFlats    = await ga('flats');
+  const flatIds     = buildingFlatIds(allFlats);
+  const tenants     = await ga('tenants');
+  const cc          = await getSetting('countryCode','91');
+  const society     = await getSetting('society','Society Management');
+
+  // Ask which month
+  const months = [...new Set(allReadings.filter(r=>flatIds.has(r.flatId)).map(r=>r.month))].sort().reverse().slice(0,12);
+  if(!months.length){toast('💧 No water readings found — take readings first');return}
+
+  openModal('💧 Send Water Bills',`
+    <div class="fg"><label class="fl">Select Month</label>
+      <select class="fc" id="wwa-month">
+        ${months.map(m=>`<option value="${m}" ${m===mk?'selected':''}>${m}</option>`).join('')}
+      </select></div>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px">Bills will be sent one-by-one via WhatsApp — you tap Send for each tenant.</div>
+    <button class="btn btn-teal btn-full" onclick="buildWaterWAQueue()">📲 Preview & Send</button>
+  `);
+}
+
+async function buildWaterWAQueue(){
+  const month   = document.getElementById('wwa-month')?.value;
+  if(!month){toast('⚠️ Select a month');return}
+  const allReadings = await ga('waterReadings');
+  const allFlats    = await ga('flats');
+  const flatIds     = buildingFlatIds(allFlats);
+  const tenants     = await ga('tenants');
+  const cc          = await getSetting('countryCode','91');
+  const society     = await getSetting('society','Society Management');
+
+  const readings = allReadings.filter(r=>r.month===month&&flatIds.has(r.flatId))
+                    .sort((a,b)=>{
+                      const fa=allFlats.find(f=>f.id===a.flatId);
+                      const fb=allFlats.find(f=>f.id===b.flatId);
+                      return (fa?.flatNo||'').localeCompare(fb?.flatNo||'','en',{numeric:true});
+                    });
+
+  const queue=[];const noPh=[];
+  for(const r of readings){
+    const fl  = allFlats.find(f=>f.id===r.flatId);
+    const ten = tenants.find(t=>t.flatId===r.flatId);
+    if(!ten?.phone){noPh.push(fl?fl.flatNo:'?');continue}
+    const ph  = cleanPhone(ten.phone,cc);
+    const msg = `Dear ${ten.name},\n\n💧 *Water Bill — ${month}*\n────────────────────\nFlat             : *${fl?fl.block+' — '+fl.flatNo:''}*\nPrev. Reading : *${r.previousReading}*\nCurr. Reading : *${r.currentReading}*\nUnits Used    : *${r.units.toFixed(1)}*\nRate              : *₹${r.rate}/unit*\nWater Bill     : *₹${r.amount.toLocaleString('en-IN',{maximumFractionDigits:2})}*\n────────────────────\nPlease pay at the earliest.\n\nThank you,\n${society}`;
+    queue.push({name:ten.name,flat:fl?fl.block+' — '+fl.flatNo:'',phone:ten.phone,extra:`${r.units.toFixed(1)} units · ₹${r.amount.toLocaleString('en-IN',{maximumFractionDigits:0})}`,url:`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`});
+  }
+  openWAQueue(queue, noPh, `💧 Water Bills — ${month}`);
+}
+
+// ── Excel export for water readings ─────────────────────────────────────────
+async function exportWaterExcel(){
+  const allReadings = await ga('waterReadings');
+  const allFlats    = await ga('flats');
+  const flatIds     = buildingFlatIds(allFlats);
+  const tenants     = await ga('tenants');
+  const readings    = allReadings.filter(r=>flatIds.has(r.flatId))
+                       .sort((a,b)=>b.month.localeCompare(a.month)||
+                         (allFlats.find(f=>f.id===a.flatId)?.flatNo||'').localeCompare(allFlats.find(f=>f.id===b.flatId)?.flatNo||'','en',{numeric:true}));
+
+  if(!readings.length){toast('💧 No water readings to export');return}
+
+  const wb = XLSX.utils.book_new();
+  const rows = readings.map(r=>{
+    const fl=allFlats.find(f=>f.id===r.flatId);
+    const ten=tenants.find(t=>t.flatId===r.flatId);
+    return{
+      'Month':r.month,'Block':fl?.block||'','Flat No.':fl?.flatNo||'',
+      'Tenant':ten?.name||'','Phone':ten?.phone||'',
+      'Previous Reading':r.previousReading,'Current Reading':r.currentReading,
+      'Units Used':r.units,'Rate (₹/unit)':r.rate,'Bill Amount (₹)':r.amount,
+      'Reading Date':r.readingDate,'Notes':r.notes||''
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:10},{wch:12},{wch:10},{wch:20},{wch:16},{wch:16},{wch:16},{wch:12},{wch:14},{wch:16},{wch:14},{wch:20}];
+  XLSX.utils.book_append_sheet(wb,ws,'Water_Readings');
+  const suffix=activeBuilding!=='All'?`_${activeBuilding.replace(/\s+/g,'_')}`:'';
+  XLSX.writeFile(wb,`Water_Meter${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast('✅ Water readings exported!');
+}
+
+// ── Helper: previous month key ───────────────────────────────────────────────
+function getPrevMonthKey(monthKey){
+  const [y,m]=monthKey.split('-').map(Number);
+  const d=new Date(y,m-2,1);
+  return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
 // ═══════════════════════════════════════════
