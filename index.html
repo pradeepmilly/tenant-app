@@ -1608,8 +1608,17 @@ async function onBillMonthChange(){
   if(flatId) await pullWaterReading(flatId);
 }
 
+// Returns true if a billing entry is a blank "pending stub" created by Add Next Month
+// (no payment recorded, nothing filled in yet — safe to edit silently)
+function isBlankStub(b){
+  return (parseFloat(b.rentPaid)||0)===0 &&
+         (parseFloat(b.total)||0)===0 &&
+         !b.account &&
+         !b.paidDate;
+}
+
 async function checkBillDuplicate(){
-  if(editId) return; // editing existing — no duplicate check needed
+  if(editId) return; // already editing — skip
   const flatId=parseInt(document.getElementById('bf-flat')?.value);
   const month=document.getElementById('bf-month')?.value;
   const warnEl=document.getElementById('bill-warn');
@@ -1617,13 +1626,23 @@ async function checkBillDuplicate(){
   if(!flatId||!month){warnEl.innerHTML='';return}
   const allBills=await ga('billing');
   const dup=allBills.find(b=>b.flatId===flatId&&b.month===month);
-  if(dup){
-    const fl=await g('flats',flatId);
-    warnEl.innerHTML=`<div style="background:var(--amber-lt);border-radius:8px;padding:8px 11px;font-size:12px;color:var(--amber);font-weight:700;margin-top:6px">
-      ⚠️ An entry for ${esc(fl?fl.block+' — '+fl.flatNo:'')} in <b>${month}</b> already exists (Status: <b>${dup.rentStatus}</b>, Total: <b>₹${(parseFloat(dup.total)||0).toLocaleString('en-IN')}</b>). Saving will overwrite it.
+  if(!dup){warnEl.innerHTML='';return}
+
+  if(isBlankStub(dup)){
+    // Silently switch to edit mode — pre-fills rent due, doesn't block the user
+    editId=dup.id;
+    // Pre-fill rent due from the stub
+    const rdue=document.getElementById('bf-rdue');
+    if(rdue&&!rdue.value&&dup.rentDue) rdue.value=dup.rentDue;
+    warnEl.innerHTML=`<div style="background:var(--teal-lt);border-radius:8px;padding:7px 11px;font-size:12px;color:var(--teal);font-weight:700;margin-bottom:4px">
+      📋 Existing pending entry loaded — fill in the payment details below
     </div>`;
   } else {
-    warnEl.innerHTML='';
+    // Real entry with payment data — warn before overwriting
+    const fl=await g('flats',flatId);
+    warnEl.innerHTML=`<div style="background:var(--amber-lt);border-radius:8px;padding:8px 11px;font-size:12px;color:var(--amber);font-weight:700;margin-top:6px">
+      ⚠️ A <b>${dup.rentStatus}</b> entry for ${esc(fl?fl.block+' — '+fl.flatNo:'')} (${month}) already has ₹${(parseFloat(dup.rentPaid)||0).toLocaleString('en-IN')} recorded. Saving will overwrite it.
+    </div>`;
   }
 }
 
@@ -1662,10 +1681,18 @@ async function saveBill(){
   const allBills=await ga('billing');
   const duplicate=allBills.find(b=>b.flatId===flatId&&b.month===month);
   if(duplicate){
+    if(isBlankStub(duplicate)){
+      // Pending stub with no payment — silently overwrite, no confirmation needed
+      data.id=duplicate.id;
+      await put('billing',data);
+      toast('✅ Billing entry saved');
+      closeModal();renderBilling();renderDash();
+      return;
+    }
     const fl=await g('flats',flatId);
     showConfirm(
       '⚠️ Entry Already Exists',
-      `A billing entry for ${esc(fl?fl.block+' — '+fl.flatNo:'')} (${month}) already exists with status "${duplicate.rentStatus}". Do you want to overwrite it?`,
+      `A billing entry for ${esc(fl?fl.block+' — '+fl.flatNo:'')} (${month}) already has ₹${(parseFloat(duplicate.rentPaid)||0).toLocaleString('en-IN')} recorded. Overwrite it?`,
       async()=>{
         data.id=duplicate.id;
         await put('billing',data);
