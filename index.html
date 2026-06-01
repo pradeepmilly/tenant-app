@@ -352,6 +352,7 @@ textarea.fc{resize:vertical;min-height:72px}
       <div class="mcard" onclick="doAddNextMonth()"><div class="mico">📅</div><div class="mtxt">Add Next Month</div><div class="msub">Create billing rows</div></div>
       <div class="mcard" onclick="doOverdueWA()"><div class="mico">💬</div><div class="mtxt">Overdue Alerts</div><div class="msub">WhatsApp reminders</div></div>
       <div class="mcard" onclick="doExpiryWA()"><div class="mico">📋</div><div class="mtxt">Renewal Alerts</div><div class="msub">Agreement expiry WA</div></div>
+      <div class="mcard" onclick="sendAllReceiptsWA()"><div class="mico">🧾</div><div class="mtxt">Send Receipts</div><div class="msub">WA receipts to all paid</div></div>
     </div>
     <div class="sh" style="margin-top:16px"><span class="st">Reports</span></div>
     <div class="more-grid">
@@ -1360,6 +1361,7 @@ async function renderBilling(){
         ${bill&&bill.elecAmount&&bill.elecStatus!=='Paid'?`<button class="btn btn-sm btn-amber" onclick="quickPayUtil(${bill.id},'elec')">⚡ Pay Elec</button>`:''}
         ${bill?`<button class="btn btn-sm btn-outline" onclick="editBill(${bill.id})">✏️ Edit</button>`:`<button class="btn btn-sm btn-amber" onclick="openBillForm(${fl.id})">+ Add Entry</button>`}
         ${isPaid&&bill?`<button class="btn btn-sm btn-ghost" style="color:var(--green)" onclick="generateReceipt(${bill.id},${fl.id})">🧾 Receipt</button>`:''}
+        ${isPaid&&bill?`<button class="btn btn-sm btn-ghost" style="color:var(--teal)" onclick="sendReceiptWA(${bill.id},${fl.id})">📲 WA Receipt</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -3953,75 +3955,174 @@ function removePin(){
 // ═══════════════════════════════════════════
 // RENT RECEIPT PDF
 // ═══════════════════════════════════════════
+// Builds the inner receipt HTML (used both in-app and print)
+function buildReceiptHTML(bill, fl, ten, society){
+  const now       = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+  const receiptNo = `RCP-${fl.id}-${bill.month.replace('-','')}`;
+  const monthFmt  = `${MONTHS[parseInt(bill.month.split('-')[1])-1]} ${bill.month.split('-')[0]}`;
+  return{receiptNo, monthFmt, html:`
+    <div style="text-align:center;border-bottom:3px double #1a3a5c;padding-bottom:12px;margin-bottom:14px">
+      <div style="font-size:20px;font-weight:900;color:#1a3a5c">🏢 ${esc(society)}</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:2px">Rent Receipt</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+      <div><div style="font-size:16px;font-weight:900;color:#1a3a5c">RENT RECEIPT</div>
+           <div style="font-size:11px;color:#6b7280">${receiptNo}</div></div>
+      <div style="font-size:11px;color:#6b7280;text-align:right">Date: ${now}</div>
+    </div>
+    <div style="margin-bottom:12px">
+      ${[
+        ['Tenant Name', esc(ten?.name||'—')],
+        ['Flat / Unit', `${esc(fl?.block||'')} — ${esc(fl?.flatNo||'')}`],
+        ['Rent Period', monthFmt],
+        ['Rent Amount', `₹${(parseFloat(bill.rentPaid)||0).toLocaleString('en-IN')}`],
+        ...(bill.waterAmount&&bill.waterStatus==='Paid'?[['Water Charges',`₹${parseFloat(bill.waterAmount).toLocaleString('en-IN')}`]]:[]),
+        ...(bill.elecAmount&&bill.elecStatus==='Paid'?[['Electricity',`₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')}`]]:[]),
+        ['Payment Mode', esc(bill.account||'—')],
+        ['Payment Date', bill.paidDate||'—'],
+      ].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--gray-100)"><span style="font-size:12px;color:var(--gray-500)">${l}</span><span style="font-weight:700;font-size:13px">${v}</span></div>`).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:11px 12px;background:var(--green-lt);border-radius:8px;margin-bottom:12px">
+      <span style="font-weight:800;font-size:14px;color:var(--green)">Total Amount Received</span>
+      <span style="font-weight:900;font-size:18px;color:var(--green)">₹${(parseFloat(bill.total)||0).toLocaleString('en-IN')}</span>
+    </div>
+    <div style="text-align:center;margin-bottom:12px">
+      <span style="display:inline-block;border:2px solid var(--green);color:var(--green);font-weight:900;font-size:16px;padding:7px 18px;border-radius:6px;transform:rotate(-5deg);letter-spacing:1px">✓ PAID</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:16px;padding-top:10px;border-top:1px solid var(--gray-200)">
+      <div style="text-align:center;font-size:10px;color:var(--gray-400);border-top:1px solid var(--gray-300);padding-top:5px;width:120px">Tenant Signature</div>
+      <div style="text-align:center;font-size:10px;color:var(--gray-400);border-top:1px solid var(--gray-300);padding-top:5px;width:140px">Authorised Signatory</div>
+    </div>
+    <div style="text-align:center;font-size:10px;color:var(--gray-400);margin-top:12px">This is a computer-generated receipt · ⚡ ASAP Automations</div>
+  `};
+}
+
 async function generateReceipt(billId, flatId){
   const bill    = await g('billing', billId);
   const fl      = await g('flats', flatId);
   const tenants = await ga('tenants');
   const ten     = tenants.find(t=>t.flatId===flatId);
   const society = await getSetting('society','Society Management');
-  const now     = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
-  const receiptNo = `RCP-${flatId}-${bill.month.replace('-','')}`;
-  const monthFmt  = `${MONTHS[parseInt(bill.month.split('-')[1])-1]} ${bill.month.split('-')[0]}`;
+  const cc      = await getSetting('countryCode','91');
+  const {receiptNo, monthFmt, html} = buildReceiptHTML(bill, fl, ten, society);
+  const waMsg   = buildReceiptMsg(bill, fl, ten, society);
+  const hasPh   = !!ten?.phone;
+  const ph      = hasPh ? cleanPhone(ten.phone, cc) : '';
 
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Rent Receipt ${receiptNo}</title>
+  // Show receipt INSIDE the app modal — no popup, works on iOS
+  openModal(`🧾 ${receiptNo}`,`
+    <div id="receipt-content">${html}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="printReceiptInApp('${esc(society)}','${receiptNo}','${monthFmt}')">🖨️ Print / PDF</button>
+      ${hasPh
+        ? `<button class="btn btn-green" onclick="sendReceiptWA(${billId},${flatId})">📲 Send WA</button>`
+        : `<button class="btn btn-ghost" disabled style="opacity:.5">📲 No phone</button>`}
+    </div>
+    ${hasPh?`<div style="font-size:11px;color:var(--gray-400);text-align:center;margin-top:6px">
+      WA sends a formatted text receipt · Print saves as PDF
+    </div>`:''}
+  `);
+}
+
+// Print the receipt: opens a minimal print window (desktop) or share sheet (iOS)
+function printReceiptInApp(society, receiptNo, monthFmt){
+  const content = document.getElementById('receipt-content')?.innerHTML||'';
+  // Use srcdoc iframe to print without popup — works on iOS Safari
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+  iframe.srcdoc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${receiptNo}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:32px;max-width:520px;margin:0 auto}
-  .header{text-align:center;border-bottom:3px double #1a3a5c;padding-bottom:14px;margin-bottom:18px}
-  .logo{font-size:24px;font-weight:900;color:#1a3a5c}
-  .sub{font-size:12px;color:#4b5563;margin-top:3px}
-  .receipt-title{font-size:18px;font-weight:900;color:#1a3a5c;margin:14px 0 4px}
-  .receipt-no{font-size:11px;color:#6b7280}
-  .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f3f4f6}
-  .row .label{color:#4b5563;font-size:12px}
-  .row .val{font-weight:700;font-size:13px}
-  .total-row{display:flex;justify-content:space-between;padding:11px 12px;background:#f0fdf4;border-radius:8px;margin-top:12px}
-  .total-label{font-weight:800;font-size:14px;color:#166534}
-  .total-val{font-weight:900;font-size:18px;color:#166534}
-  .amount-words{font-size:12px;color:#6b7280;margin:8px 0 16px;font-style:italic}
-  .sig-section{margin-top:24px;display:flex;justify-content:space-between}
-  .sig-box{text-align:center;font-size:11px;color:#6b7280;border-top:1px solid #d1d5db;padding-top:6px;width:140px}
-  .footer{margin-top:24px;text-align:center;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px}
-  .stamp{display:inline-block;border:2px solid #166534;color:#166534;font-weight:900;font-size:16px;padding:8px 18px;border-radius:6px;transform:rotate(-8deg);margin:10px 0;letter-spacing:1px}
-  @media print{@page{size:A5;margin:10mm} button{display:none}}
-</style></head><body>
-<div class="header">
-  <div class="logo">🏢 ${esc(society)}</div>
-  <div class="sub">Rent Receipt</div>
-</div>
-<div style="display:flex;justify-content:space-between;align-items:flex-start">
-  <div><div class="receipt-title">RENT RECEIPT</div><div class="receipt-no">${receiptNo}</div></div>
-  <div style="text-align:right;font-size:12px;color:#4b5563">Date: ${now}</div>
-</div>
-<div style="margin:16px 0">
-  <div class="row"><span class="label">Tenant Name</span><span class="val">${esc(ten?.name||'—')}</span></div>
-  <div class="row"><span class="label">Flat / Unit</span><span class="val">${esc(fl?.block||'')} — ${esc(fl?.flatNo||'')}</span></div>
-  <div class="row"><span class="label">Rent Period</span><span class="val">${monthFmt}</span></div>
-  <div class="row"><span class="label">Rent Amount</span><span class="val">₹${(parseFloat(bill.rentPaid)||0).toLocaleString('en-IN')}</span></div>
-  ${bill.waterAmount&&bill.waterStatus==='Paid'?`<div class="row"><span class="label">Water Charges</span><span class="val">₹${parseFloat(bill.waterAmount).toLocaleString('en-IN')}</span></div>`:''}
-  ${bill.elecAmount&&bill.elecStatus==='Paid'?`<div class="row"><span class="label">Electricity Charges</span><span class="val">₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')}</span></div>`:''}
-  <div class="row"><span class="label">Payment Mode</span><span class="val">${esc(bill.account||'—')}</span></div>
-  <div class="row"><span class="label">Payment Date</span><span class="val">${bill.paidDate||'—'}</span></div>
-</div>
-<div class="total-row">
-  <span class="total-label">Total Amount Received</span>
-  <span class="total-val">₹${(parseFloat(bill.total)||0).toLocaleString('en-IN')}</span>
-</div>
-<div style="text-align:center;margin-top:16px"><span class="stamp">✓ PAID</span></div>
-<div class="sig-section">
-  <div class="sig-box">Tenant Signature</div>
-  <div class="sig-box">Landlord / Authorized Signatory</div>
-</div>
-<div class="footer">This is a computer-generated receipt. &nbsp;|&nbsp; ⚡ ASAP Automations — Tenant Management System</div>
-<div style="text-align:center;margin-top:16px">
-  <button onclick="window.print()" style="background:#1a3a5c;color:white;border:none;padding:9px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">🖨️ Print / Save PDF</button>
-</div>
-</body></html>`;
+  body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:24px;max-width:480px;margin:0 auto}
+  @page{size:A5;margin:10mm}
+  :root{--green:#1e6b3c;--green-lt:#dcfce7;--gray-100:#f3f4f6;--gray-200:#e5e7eb;
+    --gray-300:#d1d5db;--gray-400:#9ca3af;--gray-500:#6b7280}
+</style></head><body>${content}</body></html>`;
+  document.body.appendChild(iframe);
+  iframe.onload=()=>{
+    try{
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    }catch(e){}
+    setTimeout(()=>document.body.removeChild(iframe),3000);
+  };
+}
 
-  const win=window.open('','_blank');
-  if(win){win.document.write(html);win.document.close();setTimeout(()=>{try{win.focus();win.print();}catch(e){}},500);}
-  else toast('⚠️ Allow popups to generate receipt');
+// ═══════════════════════════════════════════
+// WHATSAPP RENT RECEIPTS
+// ═══════════════════════════════════════════
+
+function buildReceiptMsg(bill, fl, ten, society){
+  const monthFmt=`${MONTHS[parseInt(bill.month.split('-')[1])-1]} ${bill.month.split('-')[0]}`;
+  const receiptNo=`RCP-${fl.id}-${bill.month.replace('-','')}`;
+  const lines=[
+    `Dear ${ten.name},`,
+    ``,
+    `🧾 *Rent Receipt — ${monthFmt}*`,
+    `────────────────────`,
+    `Receipt No : *${receiptNo}*`,
+    `Flat          : *${fl.block} — ${fl.flatNo}*`,
+    `Rent Paid  : *₹${(parseFloat(bill.rentPaid)||0).toLocaleString('en-IN')}*`,
+  ];
+  if(bill.waterAmount&&bill.waterStatus==='Paid')
+    lines.push(`Water       : *₹${parseFloat(bill.waterAmount).toLocaleString('en-IN')}*`);
+  if(bill.elecAmount&&bill.elecStatus==='Paid')
+    lines.push(`Electricity : *₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')}*`);
+  lines.push(
+    `Total Paid : *₹${(parseFloat(bill.total)||0).toLocaleString('en-IN')}*`,
+    `Mode        : *${bill.account||'—'}*`,
+    `Date          : *${bill.paidDate||'—'}*`,
+    `────────────────────`,
+    `Thank you for the timely payment! ✅`,
+    ``,
+    society
+  );
+  return lines.join('\n');
+}
+
+async function sendReceiptWA(billId, flatId){
+  const bill    = await g('billing', billId);
+  const fl      = await g('flats', flatId);
+  const tenants = await ga('tenants');
+  const ten     = tenants.find(t=>t.flatId===flatId);
+  const cc      = await getSetting('countryCode','91');
+  const society = await getSetting('society','Society Management');
+
+  if(!ten?.phone){ toast('⚠️ No phone number for this tenant'); return; }
+  const ph  = cleanPhone(ten.phone, cc);
+  const msg = buildReceiptMsg(bill, fl, ten, society);
+  window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`, '_blank');
+}
+
+// Bulk send receipts for all paid flats in the current billing month
+async function sendAllReceiptsWA(){
+  const allFlats  = await ga('flats');
+  const flats     = filterByBuilding(allFlats);
+  const tenants   = await ga('tenants');
+  const allBills  = await ga('billing');
+  const mk        = monthKey();
+  const cc        = await getSetting('countryCode','91');
+  const society   = await getSetting('society','Society Management');
+
+  const paidBills = allBills.filter(b=>b.month===mk&&b.rentStatus==='Paid'&&flats.find(f=>f.id===b.flatId));
+  if(!paidBills.length){ toast('ℹ️ No paid entries for '+monthLabel()); return; }
+
+  const queue=[], noPh=[];
+  for(const bill of paidBills){
+    const fl  = allFlats.find(f=>f.id===bill.flatId);
+    const ten = tenants.find(t=>t.flatId===bill.flatId);
+    if(!ten?.phone){ noPh.push(fl?.flatNo||'?'); continue; }
+    const ph  = cleanPhone(ten.phone, cc);
+    const msg = buildReceiptMsg(bill, fl, ten, society);
+    queue.push({
+      name:ten.name,
+      flat:fl?fl.block+' — '+fl.flatNo:'',
+      phone:ten.phone,
+      extra:`₹${(parseFloat(bill.total)||0).toLocaleString('en-IN')} · ${bill.paidDate||''}`,
+      url:`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`
+    });
+  }
+  openWAQueue(queue, noPh, `🧾 Receipts — ${monthLabel()}`);
 }
 
 // ═══════════════════════════════════════════
