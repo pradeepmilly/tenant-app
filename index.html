@@ -207,12 +207,12 @@ textarea.fc{resize:vertical;min-height:72px}
 .chips{display:flex;gap:7px;margin-bottom:12px;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{padding:5px 13px;border-radius:20px;border:1.5px solid var(--gray-200);font-size:12px;
-  font-weight:700;cursor:pointer;background:white;white-space:nowrap;font-family:inherit}
+  font-weight:700;cursor:pointer;background:var(--gray-50);color:var(--gray-700);white-space:nowrap;font-family:inherit}
 .chip.active{background:var(--blue);color:white;border-color:var(--blue)}
 
 /* Building picker chips */
 .bchip{padding:10px 16px;border-radius:12px;border:2px solid var(--gray-200);font-size:13px;
-  font-weight:700;cursor:pointer;background:white;white-space:nowrap;font-family:inherit;
+  font-weight:700;cursor:pointer;background:var(--gray-100);white-space:nowrap;font-family:inherit;
   display:flex;align-items:center;gap:8px;text-align:left;width:100%;margin-bottom:8px;
   color:var(--gray-800);transition:all .15s}
 .bchip:active{transform:scale(.97)}
@@ -4237,49 +4237,117 @@ async function openMoveOutWizard(){
 
 async function loadMoveOutDetails(flatId){
   flatId=parseInt(flatId);if(!flatId)return;
-  const fl    = await g('flats',flatId);
-  const ten   = (await ga('tenants')).find(t=>t.flatId===flatId);
-  const bills = await ga('billing');
-  const pending = bills.filter(b=>b.flatId===flatId&&['Pending','Overdue','Partial'].includes(b.rentStatus));
-  const totalDues = pending.reduce((s,b)=>s+(parseFloat(b.rentDue)||0)-(parseFloat(b.rentPaid)||0),0);
+  const fl      = await g('flats',flatId);
+  const ten     = (await ga('tenants')).find(t=>t.flatId===flatId);
+  const bills   = await ga('billing');
   const deposit = parseFloat(ten?.deposit)||0;
+  const monthlyRent = parseFloat(fl?.rent)||parseFloat(ten?.rent)||0;
+
+  // ── Calculate each deduction component ──────────────────────────────────
+  // 1. Pending rent dues
+  const pendingBills = bills.filter(b=>b.flatId===flatId&&['Pending','Overdue','Partial'].includes(b.rentStatus));
+  const pendingRent  = pendingBills.reduce((s,b)=>s+Math.max(0,(parseFloat(b.rentDue)||0)-(parseFloat(b.rentPaid)||0)),0);
+
+  // 2. Unpaid water dues across all months
+  const waterDues = bills.filter(b=>b.flatId===flatId&&b.waterAmount>0&&b.waterStatus!=='Paid')
+                         .reduce((s,b)=>s+(parseFloat(b.waterAmount)||0),0);
+
+  // 3. Unpaid electricity dues across all months
+  const elecDues  = bills.filter(b=>b.flatId===flatId&&b.elecAmount>0&&b.elecStatus!=='Paid')
+                         .reduce((s,b)=>s+(parseFloat(b.elecAmount)||0),0);
+
+  // 4. Painting & cleaning = 1 month rent (fixed)
+  const paintingCharges = monthlyRent;
+
+  const autoDeduct = pendingRent + waterDues + elecDues + paintingCharges;
+  const refund     = Math.max(0, deposit - autoDeduct);
+
   const el=document.getElementById('mo-details');
   if(!el)return;
+
+  function deductRow(label, amt, editable=false, id=''){
+    if(amt===0&&!editable) return'';
+    return`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--gray-100)">
+      <span style="font-size:12px;color:var(--gray-600)">${label}</span>
+      ${editable
+        ? `<input type="number" id="${id}" value="${amt}" oninput="recalcMoRefund()" style="width:100px;padding:4px 8px;border:1.5px solid var(--gray-200);border-radius:7px;font-size:13px;font-weight:700;color:var(--red);text-align:right">`
+        : `<span style="font-size:13px;font-weight:700;color:var(--red)">−₹${amt.toLocaleString('en-IN')}</span>`}
+    </div>`;
+  }
+
   el.innerHTML=`
-    <div style="background:var(--blue-lt);border-radius:9px;padding:11px 13px;margin:10px 0">
+    <div style="background:var(--blue-lt);border-radius:9px;padding:11px 13px;margin:10px 0 12px">
       <div style="font-size:13px;font-weight:800;margin-bottom:8px">👤 ${esc(ten?.name||'No tenant')} · ${esc(fl.block)}—${esc(fl.flatNo)}</div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>Security Deposit</span><b style="color:var(--green)">₹${deposit.toLocaleString('en-IN')}</b></div>
-      <div style="display:flex;justify-content:space-between;font-size:12px"><span>Pending Dues (${pending.length} months)</span><b style="color:var(--red)">₹${totalDues.toLocaleString('en-IN')}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px"><span>Security Deposit</span><b style="color:var(--green)">₹${deposit.toLocaleString('en-IN')}</b></div>
     </div>
-    <div class="fg"><label class="fl">Deductions from Deposit (₹)</label>
-      <input class="fc" id="mo-deduct" type="number" value="${Math.min(totalDues,deposit)}" oninput="calcMoRefund(${deposit})" placeholder="Damage, dues, etc."></div>
-    <div class="fg"><label class="fl">Deduction Reason</label>
-      <input class="fc" id="mo-reason" placeholder="Pending rent, damage, cleaning…" value="${totalDues>0?'Pending rent dues':''}"></div>
-    <div class="fg"><label class="fl">Move-Out Date</label>
-      <input class="fc" id="mo-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
-    <div style="background:var(--green-lt);border-radius:9px;padding:11px 13px;margin-bottom:14px" id="mo-refund-box">
-      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:var(--green)">
-        <span>Refund Amount</span><span id="mo-refund-amt">₹${Math.max(0,deposit-Math.min(totalDues,deposit)).toLocaleString('en-IN')}</span>
+
+    <div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Deductions</div>
+    <div style="background:white;border:1.5px solid var(--gray-200);border-radius:9px;padding:8px 12px;margin-bottom:12px">
+      ${deductRow('🎨 Painting & Cleaning (1 month rent)', paintingCharges, true, 'mo-painting')}
+      ${pendingRent>0  ? deductRow(`💰 Pending Rent (${pendingBills.length} month${pendingBills.length!==1?'s':''})`, pendingRent, true, 'mo-rent-due')  : ''}
+      ${waterDues>0    ? deductRow('💧 Unpaid Water Bills', waterDues, true, 'mo-water-due')  : ''}
+      ${elecDues>0     ? deductRow('⚡ Unpaid Electricity Bills', elecDues, true, 'mo-elec-due') : ''}
+      ${deductRow('🔧 Other Deductions (damage etc.)', 0, true, 'mo-other')}
+      <div style="display:flex;justify-content:space-between;padding:8px 0 2px;font-size:13px;font-weight:900;color:var(--red);margin-top:4px;border-top:2px solid var(--gray-200)">
+        <span>Total Deductions</span><span id="mo-total-ded">₹${autoDeduct.toLocaleString('en-IN')}</span>
       </div>
     </div>
+
+    <div style="border-radius:9px;padding:12px 14px;margin-bottom:12px" id="mo-refund-box" style="background:var(--green-lt)">
+      <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">
+        <span>Refund to Tenant</span>
+        <span id="mo-refund-amt" style="color:${refund>0?'var(--green)':'var(--red)'}">₹${refund.toLocaleString('en-IN')}</span>
+      </div>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:3px">Deposit ₹${deposit.toLocaleString('en-IN')} − Deductions</div>
+    </div>
+
+    <div class="fg"><label class="fl">Move-Out Date</label>
+      <input class="fc" id="mo-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
     <div class="fg"><label class="fl">Notes</label>
-      <textarea class="fc" id="mo-notes" placeholder="Meter readings, condition, etc." style="min-height:60px"></textarea></div>
+      <textarea class="fc" id="mo-notes" placeholder="Final meter readings, flat condition, key handover…" style="min-height:60px"></textarea></div>
     <button class="btn btn-red btn-full" onclick="processMoveOut(${flatId},${deposit})">🚪 Process Move-Out</button>
   `;
+
+  // Set correct background
+  recalcMoRefund(deposit);
 }
 
-function calcMoRefund(deposit){
-  const ded=parseFloat(document.getElementById('mo-deduct')?.value)||0;
-  const refund=Math.max(0,deposit-ded);
-  const el=document.getElementById('mo-refund-amt');
-  if(el)el.textContent='₹'+refund.toLocaleString('en-IN');
-  const box=document.getElementById('mo-refund-box');
-  if(box)box.style.background=refund>0?'var(--green-lt)':'var(--red-lt)';
+function recalcMoRefund(depositOverride){
+  const deposit = depositOverride || parseFloat(document.querySelector('#mo-details .scard')?.textContent?.replace(/[^0-9]/g,''))||0;
+  const fields  = ['mo-painting','mo-rent-due','mo-water-due','mo-elec-due','mo-other'];
+  const totalDed= fields.reduce((s,id)=>s+(parseFloat(document.getElementById(id)?.value)||0),0);
+  const refund  = Math.max(0, (parseFloat(document.querySelector('[style*="color:var(--green)"]')?.textContent?.replace(/[^0-9]/g,''))||0) - totalDed);
+
+  // Re-read deposit from the detail block
+  const depositEl = document.querySelector('#mo-details b[style*="var(--green)"]');
+  const dep = depositEl ? parseFloat(depositEl.textContent.replace(/[^0-9.]/g,'').replace(',',''))||0 : 0;
+  const ref = Math.max(0, dep - totalDed);
+
+  const dedEl=document.getElementById('mo-total-ded');
+  const refEl=document.getElementById('mo-refund-amt');
+  const box  =document.getElementById('mo-refund-box');
+  if(dedEl) dedEl.textContent='₹'+totalDed.toLocaleString('en-IN');
+  if(refEl){refEl.textContent='₹'+ref.toLocaleString('en-IN');refEl.style.color=ref>0?'var(--green)':'var(--red)';}
+  if(box)   box.style.background=ref>0?'var(--green-lt)':'var(--red-lt)';
 }
+
+function calcMoRefund(deposit){ recalcMoRefund(deposit); } // legacy alias
 
 async function processMoveOut(flatId,deposit){
-  const ded    = parseFloat(document.getElementById('mo-deduct')?.value)||0;
-  const reason = document.getElementById('mo-reason')?.value.trim()||'';
+  const painting  = parseFloat(document.getElementById('mo-painting')?.value)||0;
+  const rentDue   = parseFloat(document.getElementById('mo-rent-due')?.value)||0;
+  const waterDue  = parseFloat(document.getElementById('mo-water-due')?.value)||0;
+  const elecDue   = parseFloat(document.getElementById('mo-elec-due')?.value)||0;
+  const other     = parseFloat(document.getElementById('mo-other')?.value)||0;
+  const ded       = painting + rentDue + waterDue + elecDue + other;
+  const reasonParts = [
+    painting>0 ? `Painting & Cleaning ₹${painting.toLocaleString('en-IN')}` : '',
+    rentDue>0  ? `Pending Rent ₹${rentDue.toLocaleString('en-IN')}`         : '',
+    waterDue>0 ? `Water Dues ₹${waterDue.toLocaleString('en-IN')}`          : '',
+    elecDue>0  ? `Elec Dues ₹${elecDue.toLocaleString('en-IN')}`            : '',
+    other>0    ? `Other ₹${other.toLocaleString('en-IN')}`                  : '',
+  ].filter(Boolean);
+  const reason = reasonParts.join(' + ');
   const date   = document.getElementById('mo-date')?.value||new Date().toISOString().split('T')[0];
   const notes  = document.getElementById('mo-notes')?.value.trim()||'';
   const refund = Math.max(0,deposit-ded);
@@ -4289,9 +4357,6 @@ async function processMoveOut(flatId,deposit){
   showConfirm('Confirm Move-Out',
     `Move out ${ten?.name||'tenant'} from ${fl.block}-${fl.flatNo}? Refund: ₹${refund.toLocaleString('en-IN')}. This cannot be undone.`,
     async()=>{
-      // Save move-out record
-      await add('moveouts',{flatId,tenantId:ten?.id,tenantName:ten?.name||'',flatNo:fl.flatNo,block:fl.block,
-        deposit,deductions:ded,deductionReason:reason,refund,moveOutDate:date,notes,createdAt:new Date().toISOString()});
       // Archive tenant (mark as moved out, keep record)
       if(ten){
         const updated={...ten,movedOut:true,moveOutDate:date,updatedAt:new Date().toISOString()};
@@ -4299,23 +4364,153 @@ async function processMoveOut(flatId,deposit){
       }
       // Mark flat as Vacant
       await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
+      // Save with breakdown details
+      const moId = await add('moveouts',{flatId,tenantId:ten?.id,tenantName:ten?.name||'',tenantPhone:ten?.phone||'',
+        flatNo:fl.flatNo,block:fl.block,deposit,deductions:ded,deductionReason:reason,refund,moveOutDate:date,notes,
+        painting,rentDue,waterDue,elecDue,other,createdAt:new Date().toISOString()});
+
+      if(ten){await put('tenants',{...ten,movedOut:true,moveOutDate:date,updatedAt:new Date().toISOString()});}
+      await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
       toast('✅ Move-out processed');
       closeModal();renderDash();renderFlats();renderTenants();
-      // Show refund summary
-      openModal('🧾 Move-Out Complete',`
-        <div style="text-align:center;padding:14px 0">
-          <div style="font-size:40px;margin-bottom:10px">🚪</div>
-          <div style="font-size:16px;font-weight:800">${esc(ten?.name||'')} has moved out</div>
-          <div style="font-size:13px;color:var(--gray-500);margin-top:4px">${esc(fl.block)} — ${esc(fl.flatNo)} is now Vacant</div>
-        </div>
-        <div style="background:var(--${refund>0?'green':'gray'}-lt);border-radius:9px;padding:13px;margin:12px 0">
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px"><span>Deposit Collected</span><span>₹${deposit.toLocaleString('en-IN')}</span></div>
-          ${ded>0?`<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;color:var(--red)"><span>Deductions (${esc(reason)})</span><span>−₹${ded.toLocaleString('en-IN')}</span></div>`:''}
-          <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900;color:var(--${refund>0?'green':'gray-600'});border-top:1px solid var(--gray-200);padding-top:8px;margin-top:5px"><span>${refund>0?'Refund to Tenant':'No Refund'}</span><span>₹${refund.toLocaleString('en-IN')}</span></div>
-        </div>
-        <button class="btn btn-primary btn-full" onclick="closeModal()">✅ Done</button>
-      `);
+
+      // Fetch saved record to show report
+      const saved={id:moId,flatId,tenantName:ten?.name||'',tenantPhone:ten?.phone||'',
+        flatNo:fl.flatNo,block:fl.block,deposit,deductions:ded,deductionReason:reason,refund,moveOutDate:date,notes,
+        painting,rentDue,waterDue,elecDue,other,createdAt:new Date().toISOString()};
+      showMoveOutReport(saved);
     },'Move Out','🚪');
+}
+
+// ── Move-Out Report: show in-app, print, or send via WA ─────────────────────
+function showMoveOutReport(m){
+  const society = ''; // fetched async below
+  _showMoveOutReportAsync(m);
+}
+
+async function _showMoveOutReportAsync(m){
+  const society = await getSetting('society','Society Management');
+  const cc      = await getSetting('countryCode','91');
+  const now     = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+  const refundNo= `MOR-${m.flatId||''}-${(m.moveOutDate||'').replace(/-/g,'')}`;
+
+  function dRow(label, amt){
+    if(!amt||amt<=0) return '';
+    return`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--gray-100);font-size:13px">
+      <span style="color:var(--gray-600)">${label}</span>
+      <span style="font-weight:700;color:var(--red)">−₹${amt.toLocaleString('en-IN')}</span>
+    </div>`;
+  }
+
+  const receiptHTML=`
+    <div style="text-align:center;border-bottom:3px double #1a3a5c;padding-bottom:12px;margin-bottom:14px">
+      <div style="font-size:20px;font-weight:900;color:#1a3a5c">🏢 ${esc(society)}</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:2px">Move-Out Settlement Statement</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+      <div><div style="font-size:15px;font-weight:900;color:#1a3a5c">MOVE-OUT REPORT</div>
+           <div style="font-size:11px;color:#6b7280">${refundNo}</div></div>
+      <div style="font-size:11px;color:#6b7280;text-align:right">Date: ${now}</div>
+    </div>
+    <div style="background:var(--blue-lt);border-radius:8px;padding:10px 12px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+        <span style="color:var(--gray-600)">Tenant</span><b>${esc(m.tenantName||'—')}</b>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+        <span style="color:var(--gray-600)">Flat</span><b>${esc(m.block)} — ${esc(m.flatNo)}</b>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px">
+        <span style="color:var(--gray-600)">Move-Out Date</span><b>${m.moveOutDate||'—'}</b>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--green-lt);border-radius:8px;margin-bottom:10px">
+      <span style="font-size:13px;color:var(--green)">Security Deposit Held</span>
+      <span style="font-size:14px;font-weight:900;color:var(--green)">₹${(m.deposit||0).toLocaleString('en-IN')}</span>
+    </div>
+    <div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Deductions</div>
+    <div style="margin-bottom:10px">
+      ${dRow('🎨 Painting & Cleaning', m.painting||0)}
+      ${dRow('💰 Pending Rent Dues', m.rentDue||0)}
+      ${dRow('💧 Unpaid Water Bills', m.waterDue||0)}
+      ${dRow('⚡ Unpaid Electricity Bills', m.elecDue||0)}
+      ${dRow('🔧 Other Deductions', m.other||0)}
+      <div style="display:flex;justify-content:space-between;padding:7px 0;font-size:13px;font-weight:800;color:var(--red);border-top:2px solid var(--gray-200);margin-top:4px">
+        <span>Total Deductions</span><span>−₹${(m.deductions||0).toLocaleString('en-IN')}</span>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:12px;background:var(--${(m.refund||0)>0?'green':'gray-100'}-lt);border-radius:9px;margin-bottom:12px">
+      <span style="font-size:15px;font-weight:900;color:var(--${(m.refund||0)>0?'green':'gray-600'})">${(m.refund||0)>0?'Refund to Tenant':'No Refund Due'}</span>
+      <span style="font-size:18px;font-weight:900;color:var(--${(m.refund||0)>0?'green':'gray-600'})">₹${(m.refund||0).toLocaleString('en-IN')}</span>
+    </div>
+    ${m.notes?`<div style="font-size:12px;color:var(--gray-500);padding:8px;background:var(--gray-50);border-radius:7px;margin-bottom:10px">📝 ${esc(m.notes)}</div>`:''}
+    <div style="display:flex;justify-content:space-between;margin-top:20px;padding-top:10px;border-top:1px solid var(--gray-200)">
+      <div style="text-align:center;font-size:10px;color:var(--gray-400);border-top:1px solid var(--gray-300);padding-top:5px;width:130px">Tenant Signature</div>
+      <div style="text-align:center;font-size:10px;color:var(--gray-400);border-top:1px solid var(--gray-300);padding-top:5px;width:140px">Landlord / Authorised</div>
+    </div>
+    <div style="text-align:center;font-size:10px;color:var(--gray-400);margin-top:10px">Computer-generated document · ⚡ ASAP Automations</div>
+  `;
+
+  const hasPh = !!m.tenantPhone;
+
+  openModal(`🚪 Move-Out — ${esc(m.tenantName||'')}`,`
+    <div id="mo-report-content">${receiptHTML}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="printMoveOutReport()">🖨️ Print / PDF</button>
+      ${hasPh
+        ? `<button class="btn btn-green" onclick="sendMoveOutWA(${JSON.stringify(m).replace(/"/g,'&quot;')})">📲 Send WA</button>`
+        : `<button class="btn btn-ghost" disabled style="opacity:.5">📲 No phone</button>`}
+    </div>
+    <div style="font-size:11px;color:var(--gray-400);text-align:center;margin-top:6px">WA sends a text summary · Print saves as PDF</div>
+  `);
+}
+
+function printMoveOutReport(m){
+  // If called from history (m provided), show the report first then print
+  if(m){_showMoveOutReportAsync(typeof m==='string'?JSON.parse(m):m);setTimeout(printMoveOutReport,400);return;}
+  const content=document.getElementById('mo-report-content')?.innerHTML||'';
+  const iframe=document.createElement('iframe');
+  iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+  iframe.srcdoc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Move-Out Report</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:24px;max-width:480px;margin:0 auto}
+  @page{size:A5;margin:10mm}
+  :root{--green:#1e6b3c;--green-lt:#dcfce7;--red:#b91c1c;--gray-50:#f9fafb;
+        --gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;
+        --gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--blue-lt:#dbeafe}
+</style></head><body>${content}</body></html>`;
+  document.body.appendChild(iframe);
+  iframe.onload=()=>{try{iframe.contentWindow.focus();iframe.contentWindow.print();}catch(e){}
+    setTimeout(()=>document.body.removeChild(iframe),3000);};
+}
+
+async function sendMoveOutWA(m){
+  if(typeof m==='string') m=JSON.parse(m);
+  const society = await getSetting('society','Society Management');
+  const cc      = await getSetting('countryCode','91');
+  if(!m.tenantPhone){toast('⚠️ No phone number recorded');return;}
+  const ph = cleanPhone(m.tenantPhone, cc);
+
+  const lines=[
+    `Dear ${m.tenantName||'Tenant'},`,``,
+    `🚪 *Move-Out Settlement — ${m.moveOutDate||''}*`,
+    `────────────────────`,
+    `Flat            : *${m.block} — ${m.flatNo}*`,
+    `Move-Out Date : *${m.moveOutDate||'—'}*`,``,
+    `Security Deposit : ₹${(m.deposit||0).toLocaleString('en-IN')}`,
+  ];
+  if(m.painting>0)  lines.push(`🎨 Painting & Cleaning : −₹${m.painting.toLocaleString('en-IN')}`);
+  if(m.rentDue>0)   lines.push(`💰 Pending Rent Dues  : −₹${m.rentDue.toLocaleString('en-IN')}`);
+  if(m.waterDue>0)  lines.push(`💧 Water Dues          : −₹${m.waterDue.toLocaleString('en-IN')}`);
+  if(m.elecDue>0)   lines.push(`⚡ Electricity Dues    : −₹${m.elecDue.toLocaleString('en-IN')}`);
+  if(m.other>0)     lines.push(`🔧 Other Deductions   : −₹${m.other.toLocaleString('en-IN')}`);
+  lines.push(
+    `────────────────────`,
+    `*${(m.refund||0)>0?'Refund to You':'No Refund'} : ₹${(m.refund||0).toLocaleString('en-IN')}*`,
+    ``, m.notes?`Note: ${m.notes}`:'',
+    ``, society
+  );
+  window.open(`https://wa.me/${ph}?text=${encodeURIComponent(lines.filter(Boolean).join('\n'))}`,'_blank');
 }
 
 async function viewMoveOutHistory(){
@@ -4334,9 +4529,14 @@ async function viewMoveOutHistory(){
             <div class="csub">${esc(m.block)}—${esc(m.flatNo)} · ${m.moveOutDate||''}</div>
           </div>
           <div class="cright">
-            <div style="font-size:12px;font-weight:800;color:${m.refund>0?'var(--green)':'var(--gray-500)'}">Refund: ₹${(m.refund||0).toLocaleString('en-IN')}</div>
+            <div style="font-size:12px;font-weight:800;color:${m.refund>0?'var(--green)':'var(--gray-500)'}">₹${(m.refund||0).toLocaleString('en-IN')}</div>
             ${m.deductions>0?`<div style="font-size:10px;color:var(--red)">Ded: ₹${m.deductions.toLocaleString('en-IN')}</div>`:''}
           </div>
+        </div>
+        <div class="cact">
+          <button class="btn btn-sm btn-outline" onclick="_showMoveOutReportAsync(${JSON.stringify(m).replace(/"/g,'&quot;')})">🧾 View Report</button>
+          <button class="btn btn-sm btn-ghost" style="color:var(--teal)" onclick="sendMoveOutWA(${JSON.stringify(m).replace(/"/g,'&quot;')})">📲 WA</button>
+          <button class="btn btn-sm btn-ghost" onclick="printMoveOutReport(${JSON.stringify(m).replace(/"/g,'&quot;')})">🖨️</button>
         </div>
       </div>`).join('')}
   `);
