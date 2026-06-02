@@ -2630,9 +2630,13 @@ async function runImport(wb){
         f.flatNo.trim().toLowerCase()===flatNo.toLowerCase()
       );
       if(!fl){errors.push(`Billing: flat "${block} — ${flatNo}" not found (Month=${month})`);skipped++;continue}
-      // Skip duplicates (refresh after each add to stay accurate)
-      if(allBillsNow.find(b=>b.flatId===fl.id&&b.month===month)){skipped++;continue}
-      await add('billing',{
+      // Check for existing bill for this flat+month
+      const existingBill=allBillsNow.find(b=>b.flatId===fl.id&&b.month===month);
+      if(existingBill&&!isBlankStub(existingBill)){
+        // Real entry with payment data — skip to avoid overwriting
+        skipped++;continue;
+      }
+      const importData={
         flatId:fl.id, month,
         rentDue:parseFloat(row['Rent Due']||0),
         rentPaid:parseFloat(row['Rent Paid']||0),
@@ -2650,7 +2654,14 @@ async function runImport(wb){
         paidDate:_fmtDate(row['Date']||row['Paid Date']||''),
         notes:String(row['Notes']||''),
         createdAt:new Date().toISOString()
-      });
+      };
+      if(existingBill){
+        // Blank stub — overwrite with real import data
+        importData.id=existingBill.id;
+        await put('billing',importData);
+      } else {
+        await add('billing',importData);
+      }
       billCount++;
       allBillsNow=await ga('billing'); // keep in sync for duplicate check
     }
