@@ -2661,12 +2661,23 @@ async function runImport(wb){
   const expSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('expense'))||'Expenses');
   if(expSheet&&expSheet.length>0){
     const validCats=new Set(DEFAULT_EXPENSE_CATEGORIES.map(c=>c.name));
+    let allExpensesNow=await ga('expenses');
     for(const row of expSheet){
       const building  = String(row['Building']||'').trim();
       const month     = _fmtMonth(row['Month']);
       const category  = String(row['Category']||'Other').trim();
       const amount    = parseFloat(row['Amount (₹)']||row['Amount']||0);
+      const vendor    = String(row['Vendor']||'').trim();
+      const notes     = String(row['Notes']||'').trim();
       if(!building||!month||!amount) {skipped++;continue}
+      // Skip duplicate: same building + month + category + amount + vendor
+      if(allExpensesNow.find(e=>
+        e.building===building &&
+        e.month===month &&
+        e.category===(validCats.has(category)?category:'Other') &&
+        (parseFloat(e.amount)||0)===amount &&
+        (e.vendor||'').trim()===vendor
+      )){skipped++;continue}
       // Use 'Other' if category not in our list
       const cat = validCats.has(category)?category:'Other';
       await add('expenses',{
@@ -2675,11 +2686,12 @@ async function runImport(wb){
         amount,
         paidDate:_fmtDate(row['Paid Date']||row['Date']||''),
         account:String(row['Account']||''),
-        vendor:String(row['Vendor']||''),
-        notes:String(row['Notes']||''),
+        vendor,
+        notes,
         createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
       });
       expenseCount++;
+      allExpensesNow=await ga('expenses'); // keep in sync for subsequent duplicate checks
     }
   }
 
