@@ -4108,6 +4108,8 @@ function buildReceiptMsg(bill, fl, ten, society){
 }
 
 async function sendReceiptWA(billId, flatId){
+  // Open window synchronously (before any await) so iOS Safari doesn't block it
+  const win = window.open('', '_blank');
   const bill    = await g('billing', billId);
   const fl      = await g('flats', flatId);
   const tenants = await ga('tenants');
@@ -4115,10 +4117,11 @@ async function sendReceiptWA(billId, flatId){
   const cc      = await getSetting('countryCode','91');
   const society = await getSetting('society','Society Management');
 
-  if(!ten?.phone){ toast('⚠️ No phone number for this tenant'); return; }
+  if(!ten?.phone){ if(win) win.close(); toast('⚠️ No phone number for this tenant'); return; }
   const ph  = cleanPhone(ten.phone, cc);
   const msg = buildReceiptMsg(bill, fl, ten, society);
-  window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`, '_blank');
+  if(win) win.location.href = `https://wa.me/${ph}?text=${encodeURIComponent(msg)}`;
+  else window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
 // Bulk send receipts for all paid flats in the current billing month
@@ -4486,9 +4489,11 @@ function printMoveOutReport(m){
 
 async function sendMoveOutWA(m){
   if(typeof m==='string') m=JSON.parse(m);
+  // Open window synchronously (before any await) so iOS Safari doesn't block it
+  const win = window.open('', '_blank');
   const society = await getSetting('society','Society Management');
   const cc      = await getSetting('countryCode','91');
-  if(!m.tenantPhone){toast('⚠️ No phone number recorded');return;}
+  if(!m.tenantPhone){if(win) win.close(); toast('⚠️ No phone number recorded');return;}
   const ph = cleanPhone(m.tenantPhone, cc);
 
   const lines=[
@@ -4510,7 +4515,9 @@ async function sendMoveOutWA(m){
     ``, m.notes?`Note: ${m.notes}`:'',
     ``, society
   );
-  window.open(`https://wa.me/${ph}?text=${encodeURIComponent(lines.filter(Boolean).join('\n'))}`,'_blank');
+  const url = `https://wa.me/${ph}?text=${encodeURIComponent(lines.filter(Boolean).join('\n'))}`;
+  if(win) win.location.href = url;
+  else window.open(url,'_blank');
 }
 
 async function viewMoveOutHistory(){
