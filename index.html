@@ -2444,6 +2444,28 @@ async function exportExcel(){
   ws4['!cols']=[{wch:28},{wch:16},{wch:50}];
   XLSX.utils.book_append_sheet(wb,ws4,'Settings');
 
+  // Vacated Tenants sheet
+  const allMoveouts=await ga('moveouts');
+  allMoveouts.sort((a,b)=>(b.moveOutDate||b.createdAt).localeCompare(a.moveOutDate||a.createdAt));
+  const moRows=allMoveouts.map(m=>({
+    'Block':m.block||'','Flat No':m.flatNo||'','Tenant Name':m.tenantName||'',
+    'Phone':m.tenantPhone||'','Email':m.tenantEmail||'','Persons':m.persons||0,
+    'Monthly Rent':m.monthlyRent||0,'Move-In Date':m.moveInDate||'','Move-Out Date':m.moveOutDate||'',
+    'Agreement Duration':m.agreementDur||'','Agreement End':m.agreementEnd||'','Notice Period':m.noticePeriod||'',
+    'Security Deposit':m.deposit||0,'Deductions':m.deductions||0,'Deduction Reason':m.deductionReason||'',
+    'Painting':m.painting||0,'Rent Due':m.rentDue||0,'Water Due':m.waterDue||0,
+    'Elec Due':m.elecDue||0,'Other Deductions':m.other||0,'Refund':m.refund||0,
+    'Notes':m.notes||'','Tenant Remarks':m.tenantRemarks||'','Recorded On':m.createdAt?m.createdAt.split('T')[0]:''
+  }));
+  const wsMo=XLSX.utils.json_to_sheet(moRows.length?moRows:[{
+    'Block':'','Flat No':'','Tenant Name':'','Phone':'','Email':'','Persons':0,
+    'Monthly Rent':0,'Move-In Date':'','Move-Out Date':'','Agreement Duration':'','Agreement End':'','Notice Period':'',
+    'Security Deposit':0,'Deductions':0,'Deduction Reason':'','Painting':0,'Rent Due':0,'Water Due':0,
+    'Elec Due':0,'Other Deductions':0,'Refund':0,'Notes':'','Tenant Remarks':'','Recorded On':''
+  }]);
+  wsMo['!cols']=[{wch:10},{wch:8},{wch:20},{wch:14},{wch:22},{wch:8},{wch:12},{wch:12},{wch:12},{wch:18},{wch:14},{wch:14},{wch:14},{wch:12},{wch:22},{wch:10},{wch:10},{wch:10},{wch:10},{wch:14},{wch:10},{wch:20},{wch:20},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,wsMo,'Vacated_Tenants');
+
   const suffix=activeBuilding!=='All'?`_${activeBuilding.replace(/\s+/g,'_')}`:'';
   XLSX.writeFile(wb,`TMS${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
   toast('✅ Excel downloaded!');
@@ -2722,6 +2744,37 @@ async function runImport(wb){
     if(settingsCount>0) renderDash(); // refresh header with new society name
   }
 
+  // ── VACATED TENANTS ──
+  let moveoutCount=0;
+  const moSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('vacat'))||'Vacated_Tenants');
+  if(moSheet&&moSheet.length>0){
+    const existingMo=await ga('moveouts');
+    for(const row of moSheet){
+      const name=String(row['Tenant Name']||'').trim();
+      const block=String(row['Block']||'').trim();
+      const flatNo=String(row['Flat No']||row['Flat No.']||'').trim();
+      const moveOutDate=String(row['Move-Out Date']||'').trim();
+      if(!name||!block||!flatNo){skipped++;continue;}
+      if(existingMo.find(e=>e.tenantName===name&&e.block===block&&e.flatNo===flatNo&&e.moveOutDate===moveOutDate)){skipped++;continue;}
+      await add('moveouts',{
+        tenantId:null,tenantName:name,
+        tenantPhone:String(row['Phone']||''),tenantEmail:String(row['Email']||''),
+        persons:parseInt(row['Persons']||0)||0,monthlyRent:parseFloat(row['Monthly Rent']||0),
+        moveInDate:String(row['Move-In Date']||''),moveOutDate,
+        agreementDur:String(row['Agreement Duration']||''),agreementEnd:String(row['Agreement End']||''),
+        noticePeriod:String(row['Notice Period']||''),tenantRemarks:String(row['Tenant Remarks']||''),
+        block,flatNo,flatId:null,
+        deposit:parseFloat(row['Security Deposit']||0),deductions:parseFloat(row['Deductions']||0),
+        deductionReason:String(row['Deduction Reason']||''),painting:parseFloat(row['Painting']||0),
+        rentDue:parseFloat(row['Rent Due']||0),waterDue:parseFloat(row['Water Due']||0),
+        elecDue:parseFloat(row['Elec Due']||0),other:parseFloat(row['Other Deductions']||0),
+        refund:parseFloat(row['Refund']||0),notes:String(row['Notes']||''),
+        createdAt:String(row['Recorded On']||new Date().toISOString())
+      });
+      moveoutCount++;
+    }
+  }
+
   // ── WATER READINGS ──
   let waterCount=0;
   const waterSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('water'))||'Water_Readings');
@@ -2761,7 +2814,7 @@ async function runImport(wb){
   }
 
   // ── Result ──
-  const total=flatCount+tenantCount+billCount+waterCount+expenseCount+settingsCount;
+  const total=flatCount+tenantCount+billCount+waterCount+expenseCount+settingsCount+moveoutCount;
   if(total===0&&skipped===0&&errors.length===0){
     openModal('📥 Import Result',`<div class="empty"><div class="eico">🤔</div><div class="etitle">Nothing to import</div><div class="esub">No recognised sheets found. Check the Import Guide for column names.</div></div>`);
     return;
@@ -2773,10 +2826,11 @@ async function runImport(wb){
       <div class="scard"><div class="snum" style="color:var(--green)">${tenantCount}</div><div class="slbl">Tenants</div></div>
       <div class="scard"><div class="snum" style="color:var(--amber)">${billCount}</div><div class="slbl">Bills</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px">
       <div class="scard"><div class="snum" style="color:var(--teal)">${waterCount}</div><div class="slbl">Water</div></div>
       <div class="scard"><div class="snum" style="color:var(--red)">${expenseCount}</div><div class="slbl">Expenses</div></div>
       <div class="scard"><div class="snum" style="color:var(--purple)">${settingsCount}</div><div class="slbl">Settings</div></div>
+      <div class="scard"><div class="snum" style="color:var(--gray-600)">${moveoutCount}</div><div class="slbl">Vacated</div></div>
     </div>
     ${skipped>0?`<div style="background:var(--amber-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--amber);font-weight:700;margin-bottom:10px">⏭ ${skipped} row(s) skipped (already exist or missing required fields)</div>`:''}
     ${errors.length>0?`<div style="background:var(--red-lt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--red);margin-bottom:10px">
@@ -4407,27 +4461,25 @@ async function processMoveOut(flatId,deposit){
   showConfirm('Confirm Move-Out',
     `Move out ${ten?.name||'tenant'} from ${fl.block}-${fl.flatNo}? Refund: ₹${refund.toLocaleString('en-IN')}. This cannot be undone.`,
     async()=>{
-      // Archive tenant (mark as moved out, keep record)
-      if(ten){
-        const updated={...ten,movedOut:true,moveOutDate:date,updatedAt:new Date().toISOString()};
-        await put('tenants',updated);
-      }
       // Mark flat as Vacant
       await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
-      // Save with breakdown details
-      const moId = await add('moveouts',{flatId,tenantId:ten?.id,tenantName:ten?.name||'',tenantPhone:ten?.phone||'',
-        flatNo:fl.flatNo,block:fl.block,deposit,deductions:ded,deductionReason:reason,refund,moveOutDate:date,notes,
-        painting,rentDue,waterDue,elecDue,other,createdAt:new Date().toISOString()});
-
+      // Save with full tenant details + breakdown
+      const moRecord={flatId,tenantId:ten?.id||null,
+        tenantName:ten?.name||'',tenantPhone:ten?.phone||'',tenantEmail:ten?.email||'',
+        persons:ten?.persons||0,monthlyRent:ten?.rent||fl.rent||0,
+        moveInDate:ten?.moveIn||'',agreementDur:ten?.agreementDur||'',
+        agreementEnd:ten?.agreementEnd||'',noticePeriod:ten?.noticePeriod||'',
+        tenantRemarks:ten?.remarks||'',
+        flatNo:fl.flatNo,block:fl.block,
+        deposit,deductions:ded,deductionReason:reason,refund,moveOutDate:date,notes,
+        painting,rentDue,waterDue,elecDue,other,createdAt:new Date().toISOString()};
+      const moId = await add('moveouts',moRecord);
       if(ten){await put('tenants',{...ten,movedOut:true,moveOutDate:date,updatedAt:new Date().toISOString()});}
-      await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
       toast('✅ Move-out processed');
       closeModal();renderDash();renderFlats();renderTenants();
 
-      // Fetch saved record to show report
-      const saved={id:moId,flatId,tenantName:ten?.name||'',tenantPhone:ten?.phone||'',
-        flatNo:fl.flatNo,block:fl.block,deposit,deductions:ded,deductionReason:reason,refund,moveOutDate:date,notes,
-        painting,rentDue,waterDue,elecDue,other,createdAt:new Date().toISOString()};
+      // Show report with full record
+      const saved={id:moId,...moRecord};
       showMoveOutReport(saved);
     },'Move Out','🚪');
 }
@@ -4567,33 +4619,167 @@ async function sendMoveOutWA(m){
   else window.open(url,'_blank');
 }
 
-async function viewMoveOutHistory(){
+async function viewMoveOutHistory(searchQ){
   const moveouts = await ga('moveouts');
-  if(!moveouts.length){
-    openModal('📜 Move-Out History',`<div class="empty"><div class="eico">🚪</div><div class="etitle">No move-outs yet</div></div>`);return;
-  }
-  moveouts.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-  openModal('📜 Move-Out History',`
-    ${moveouts.map(m=>`
-      <div class="card" style="margin-bottom:8px">
+  const q=(searchQ||'').toLowerCase().trim();
+  const filtered=moveouts.filter(m=>!q||
+    (m.tenantName||'').toLowerCase().includes(q)||
+    (m.block||'').toLowerCase().includes(q)||
+    (m.flatNo||'').toLowerCase().includes(q)||
+    (m.tenantPhone||'').includes(q)||
+    (m.moveOutDate||'').includes(q)
+  ).sort((a,b)=>(b.moveOutDate||b.createdAt).localeCompare(a.moveOutDate||a.createdAt));
+
+  const cards=filtered.length===0
+    ?`<div class="empty"><div class="eico">🚪</div><div class="etitle">${moveouts.length?'No matches':'No move-outs yet'}</div></div>`
+    :filtered.map(m=>{
+      const mj=JSON.stringify(m).replace(/"/g,'&quot;');
+      return`<div class="card" style="margin-bottom:8px">
         <div class="cb crow">
           <div class="cavatar" style="background:var(--gray-400)">🚪</div>
           <div class="cinfo">
             <div class="cname">${esc(m.tenantName||'—')}</div>
-            <div class="csub">${esc(m.block)}—${esc(m.flatNo)} · ${m.moveOutDate||''}</div>
+            <div class="csub">${esc(m.block)}—${esc(m.flatNo)} · Vacated: ${m.moveOutDate||'—'}</div>
+            ${m.moveInDate?`<div class="csub" style="color:var(--gray-400)">Stayed: ${m.moveInDate} → ${m.moveOutDate||'?'}</div>`:''}
           </div>
           <div class="cright">
-            <div style="font-size:12px;font-weight:800;color:${m.refund>0?'var(--green)':'var(--gray-500)'}">₹${(m.refund||0).toLocaleString('en-IN')}</div>
+            <div style="font-size:12px;font-weight:800;color:${(m.refund||0)>0?'var(--green)':'var(--gray-500)'}">₹${(m.refund||0).toLocaleString('en-IN')}</div>
             ${m.deductions>0?`<div style="font-size:10px;color:var(--red)">Ded: ₹${m.deductions.toLocaleString('en-IN')}</div>`:''}
           </div>
         </div>
+        ${m.tenantPhone||m.tenantEmail||m.monthlyRent?`
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 6px;font-size:11px;color:var(--gray-500)">
+          ${m.tenantPhone?`<span>📞 ${esc(m.tenantPhone)}</span>`:''}
+          ${m.tenantEmail?`<span>✉️ ${esc(m.tenantEmail)}</span>`:''}
+          ${m.monthlyRent?`<span>💰 ₹${parseFloat(m.monthlyRent).toLocaleString('en-IN')}/mo</span>`:''}
+          ${m.deposit?`<span>🔐 Deposit ₹${parseFloat(m.deposit).toLocaleString('en-IN')}</span>`:''}
+          ${m.persons?`<span>👥 ${m.persons} person${m.persons>1?'s':''}</span>`:''}
+        </div>`:''}
         <div class="cact">
-          <button class="btn btn-sm btn-outline" onclick="_showMoveOutReportAsync(${JSON.stringify(m).replace(/"/g,'&quot;')})">🧾 View Report</button>
-          <button class="btn btn-sm btn-ghost" style="color:var(--teal)" onclick="sendMoveOutWA(${JSON.stringify(m).replace(/"/g,'&quot;')})">📲 WA</button>
-          <button class="btn btn-sm btn-ghost" onclick="printMoveOutReport(${JSON.stringify(m).replace(/"/g,'&quot;')})">🖨️</button>
+          <button class="btn btn-sm btn-outline" onclick="_showMoveOutReportAsync(${mj})">🧾 Report</button>
+          <button class="btn btn-sm btn-ghost" style="color:var(--teal)" onclick="sendMoveOutWA(${mj})">📲 WA</button>
+          <button class="btn btn-sm btn-ghost" onclick="printMoveOutReport(${mj})">🖨️</button>
+          <button class="btn btn-sm btn-ghost" style="color:var(--red)" onclick="deleteMoveOut(${m.id})">🗑️</button>
         </div>
-      </div>`).join('')}
+      </div>`;
+    }).join('');
+
+  openModal('📜 Vacated Tenants',`
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input class="fc" placeholder="🔍 Search name, flat, phone…" style="flex:1" value="${esc(q)}"
+        oninput="document.getElementById('mo-list').innerHTML='';viewMoveOutHistory(this.value).then(()=>{})">
+      <button class="btn btn-sm btn-teal" onclick="exportMoveOutExcel()">📊 Export</button>
+      <button class="btn btn-sm btn-ghost" onclick="document.getElementById('mo-import-file').click()">📥 Import</button>
+      <input type="file" id="mo-import-file" accept=".xlsx,.xls" style="display:none" onchange="importMoveOutExcel(this)">
+    </div>
+    <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px">${moveouts.length} total · ${filtered.length} shown</div>
+    <div id="mo-list">${cards}</div>
   `);
+}
+
+async function deleteMoveOut(id){
+  showConfirm('Delete Record','Remove this vacated tenant record? This cannot be undone.',async()=>{
+    await del('moveouts',id);
+    toast('🗑️ Record deleted');
+    viewMoveOutHistory();
+  },'Delete','🗑️');
+}
+
+async function exportMoveOutExcel(){
+  const moveouts=await ga('moveouts');
+  if(!moveouts.length){toast('No records to export');return;}
+  moveouts.sort((a,b)=>(b.moveOutDate||b.createdAt).localeCompare(a.moveOutDate||a.createdAt));
+  const rows=moveouts.map(m=>({
+    'Block':m.block||'',
+    'Flat No':m.flatNo||'',
+    'Tenant Name':m.tenantName||'',
+    'Phone':m.tenantPhone||'',
+    'Email':m.tenantEmail||'',
+    'Persons':m.persons||0,
+    'Monthly Rent':m.monthlyRent||0,
+    'Move-In Date':m.moveInDate||'',
+    'Move-Out Date':m.moveOutDate||'',
+    'Agreement Duration':m.agreementDur||'',
+    'Agreement End':m.agreementEnd||'',
+    'Notice Period':m.noticePeriod||'',
+    'Security Deposit':m.deposit||0,
+    'Deductions':m.deductions||0,
+    'Deduction Reason':m.deductionReason||'',
+    'Painting':m.painting||0,
+    'Rent Due':m.rentDue||0,
+    'Water Due':m.waterDue||0,
+    'Elec Due':m.elecDue||0,
+    'Other Deductions':m.other||0,
+    'Refund':m.refund||0,
+    'Notes':m.notes||'',
+    'Tenant Remarks':m.tenantRemarks||'',
+    'Recorded On':m.createdAt?m.createdAt.split('T')[0]:''
+  }));
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:10},{wch:8},{wch:20},{wch:14},{wch:22},{wch:8},{wch:12},{wch:12},{wch:12},
+    {wch:18},{wch:14},{wch:14},{wch:14},{wch:12},{wch:22},{wch:10},{wch:10},{wch:10},{wch:10},{wch:14},{wch:10},{wch:20},{wch:20},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws,'Vacated_Tenants');
+  XLSX.writeFile(wb,`TMS_Vacated_Tenants_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast('✅ Vacated tenants exported!');
+}
+
+async function importMoveOutExcel(input){
+  const file=input.files[0];if(!file)return;
+  input.value='';
+  toast('⏳ Reading file…');
+  const reader=new FileReader();
+  reader.onload=async(e)=>{
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      if(!ws){toast('❌ No sheet found');return;}
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      const existing=await ga('moveouts');
+      let added=0,skipped=0;
+      for(const row of rows){
+        const name=String(row['Tenant Name']||'').trim();
+        const block=String(row['Block']||'').trim();
+        const flatNo=String(row['Flat No']||row['Flat No.']||'').trim();
+        const moveOutDate=String(row['Move-Out Date']||'').trim();
+        if(!name||!block||!flatNo){skipped++;continue;}
+        // Skip if same name+flat+moveOutDate already exists
+        if(existing.find(e=>e.tenantName===name&&e.block===block&&e.flatNo===flatNo&&e.moveOutDate===moveOutDate)){skipped++;continue;}
+        await add('moveouts',{
+          tenantId:null,
+          tenantName:name,
+          tenantPhone:String(row['Phone']||''),
+          tenantEmail:String(row['Email']||''),
+          persons:parseInt(row['Persons']||0)||0,
+          monthlyRent:parseFloat(row['Monthly Rent']||0),
+          moveInDate:String(row['Move-In Date']||''),
+          moveOutDate,
+          agreementDur:String(row['Agreement Duration']||''),
+          agreementEnd:String(row['Agreement End']||''),
+          noticePeriod:String(row['Notice Period']||''),
+          tenantRemarks:String(row['Tenant Remarks']||''),
+          block,flatNo,
+          flatId:null,
+          deposit:parseFloat(row['Security Deposit']||0),
+          deductions:parseFloat(row['Deductions']||0),
+          deductionReason:String(row['Deduction Reason']||''),
+          painting:parseFloat(row['Painting']||0),
+          rentDue:parseFloat(row['Rent Due']||0),
+          waterDue:parseFloat(row['Water Due']||0),
+          elecDue:parseFloat(row['Elec Due']||0),
+          other:parseFloat(row['Other Deductions']||0),
+          refund:parseFloat(row['Refund']||0),
+          notes:String(row['Notes']||''),
+          createdAt:String(row['Recorded On']||new Date().toISOString())
+        });
+        added++;
+      }
+      toast(`✅ Imported ${added} records${skipped?` · ${skipped} skipped`:''}`);
+      viewMoveOutHistory();
+    }catch(err){toast('❌ Import failed: '+err.message);}
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // ═══════════════════════════════════════════
