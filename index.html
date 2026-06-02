@@ -1389,9 +1389,19 @@ async function quickPayUtil(billId, type){
 }
 
 async function quickPaid(flatId,rent,mk,existId){
-  const data={flatId,month:mk,rentDue:rent,rentPaid:rent,rentStatus:'Paid',
-    waterUnits:0,waterRate:0,waterAmount:0,elecUnits:0,elecAmount:0,elecStatus:'Paid',
-    total:rent,account:'Cash',paidDate:new Date().toISOString().split('T')[0],notes:'',createdAt:new Date().toISOString()};
+  let base={};
+  if(existId&&existId!=='null'){
+    const existing=await g('billing',existId);
+    if(existing) base=existing; // preserve water/elec data
+  }
+  const wAmt=parseFloat(base.waterAmount)||0;
+  const eAmt=parseFloat(base.elecAmount)||0;
+  const wPaid=base.waterStatus==='Paid';
+  const ePaid=base.elecStatus==='Paid';
+  const data={...base,flatId,month:mk,rentDue:rent,rentPaid:rent,rentStatus:'Paid',
+    account:base.account||'Cash',paidDate:base.paidDate||new Date().toISOString().split('T')[0],
+    notes:base.notes||'',createdAt:base.createdAt||new Date().toISOString(),
+    total:rent+(wPaid?wAmt:0)+(ePaid?eAmt:0)};
   if(existId&&existId!=='null'){data.id=existId;await put('billing',data)}
   else await add('billing',data);
   toast('✅ Marked as Paid');renderBilling();renderDash();
@@ -1614,7 +1624,9 @@ function isBlankStub(b){
   return (parseFloat(b.rentPaid)||0)===0 &&
          (parseFloat(b.total)||0)===0 &&
          !b.account &&
-         !b.paidDate;
+         !b.paidDate &&
+         b.waterStatus!=='Paid' &&
+         b.elecStatus!=='Paid';
 }
 
 async function checkBillDuplicate(){
@@ -1652,21 +1664,33 @@ async function saveBill(){
   if(!flatId){toast('⚠️ Select a flat');return}
   if(!month){toast('⚠️ Select a month');return}
 
+  const _rentDue   = parseFloat(document.getElementById('bf-rdue').value)||0;
+  const _rentPaid  = parseFloat(document.getElementById('bf-rpaid').value)||0;
+  const _waterAmt  = parseFloat(document.getElementById('bf-wa').value)||0;
+  const _elecAmt   = parseFloat(document.getElementById('bf-ea').value)||0;
+  const _wPaid     = document.getElementById('bf-wpaid')?.checked||false;
+  const _ePaid     = document.getElementById('bf-epaid')?.checked||false;
+  const _wStatus   = _wPaid ? 'Paid' : 'Pending';
+  const _eStatus   = _ePaid ? 'Paid' : 'Pending';
+  // Always recompute totals from current field values — never rely on stale bf-total
+  const _totalDue  = _rentDue + _waterAmt + _elecAmt;
+  const _total     = _rentPaid + (_wPaid ? _waterAmt : 0) + (_ePaid ? _elecAmt : 0);
+
   const data={flatId,month,
     account:document.getElementById('bf-acct').value,
-    rentDue:parseFloat(document.getElementById('bf-rdue').value)||0,
-    rentPaid:parseFloat(document.getElementById('bf-rpaid').value)||0,
+    rentDue:_rentDue,
+    rentPaid:_rentPaid,
     rentStatus:document.getElementById('bf-rst').value,
     paidDate:document.getElementById('bf-date').value,
     waterUnits:parseFloat(document.getElementById('bf-wu').value)||0,
     waterRate:parseFloat(document.getElementById('bf-wr').value)||0.10,
-    waterAmount:parseFloat(document.getElementById('bf-wa').value)||0,
-    waterStatus:document.getElementById('bf-wpaid')?.checked?'Paid':'Pending',
+    waterAmount:_waterAmt,
+    waterStatus:_wStatus,
     elecUnits:parseFloat(document.getElementById('bf-eu').value)||0,
-    elecAmount:parseFloat(document.getElementById('bf-ea').value)||0,
-    elecStatus:document.getElementById('bf-epaid')?.checked?'Paid':'Pending',
-    totalDue:parseFloat(document.getElementById('bf-total-due')?.value)||0,
-    total:parseFloat(document.getElementById('bf-total').value)||0,
+    elecAmount:_elecAmt,
+    elecStatus:_eStatus,
+    totalDue:_totalDue,
+    total:_total,
     notes:document.getElementById('bf-notes').value.trim(),
     createdAt:new Date().toISOString()
   };
