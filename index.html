@@ -366,7 +366,18 @@ textarea.fc{resize:vertical;min-height:72px}
     <div class="sh" style="margin-top:16px"><span class="st">Tenants</span></div>
     <div class="more-grid">
       <div class="mcard" onclick="openMoveOutWizard()"><div class="mico">🚪</div><div class="mtxt">Move-Out</div><div class="msub">Vacate & deposit refund</div></div>
-      <div class="mcard" onclick="viewMoveOutHistory()"><div class="mico">📜</div><div class="mtxt">Move-Out History</div><div class="msub">Past tenants & refunds</div></div>
+      <div class="mcard" onclick="viewMoveOutHistory()"><div class="mico">📜</div><div class="mtxt">Vacated Tenants</div><div class="msub">History & refunds</div></div>
+      <div class="mcard" onclick="openYearEndStatement()"><div class="mico">📄</div><div class="mtxt">Year-End Statement</div><div class="msub">Annual summary per tenant</div></div>
+    </div>
+    <div class="sh" style="margin-top:16px"><span class="st">Billing Tools</span></div>
+    <div class="more-grid">
+      <div class="mcard" onclick="openBulkPaid()"><div class="mico">✅</div><div class="mtxt">Bulk Mark Paid</div><div class="msub">Select multiple flats</div></div>
+      <div class="mcard" onclick="showAgingReport()"><div class="mico">⏳</div><div class="mtxt">Dues Aging</div><div class="msub">30 / 60 / 90+ day buckets</div></div>
+    </div>
+    <div class="sh" style="margin-top:16px"><span class="st">Analytics</span></div>
+    <div class="more-grid">
+      <div class="mcard" onclick="showOccupancyTrend()"><div class="mico">📈</div><div class="mtxt">Occupancy Trend</div><div class="msub">Month-by-month %</div></div>
+      <div class="mcard" onclick="showTurnoverChart()"><div class="mico">🔄</div><div class="mtxt">Tenant Turnover</div><div class="msub">Move-outs per month</div></div>
     </div>
     <div class="sh" style="margin-top:16px"><span class="st">Maintenance</span></div>
     <div class="more-grid">
@@ -467,7 +478,7 @@ textarea.fc{resize:vertical;min-height:72px}
 // DB
 // ═══════════════════════════════════════════
 let db;
-const DB_VERSION = 6;
+const DB_VERSION = 8;
 
 function initDB(){
   return new Promise((res,rej)=>{
@@ -515,6 +526,17 @@ function initDB(){
       if(!d.objectStoreNames.contains('moveouts')){
         d.createObjectStore('moveouts',{keyPath:'id',autoIncrement:true});
       }
+      if(!d.objectStoreNames.contains('auditLog')){
+        const s=d.createObjectStore('auditLog',{keyPath:'id',autoIncrement:true});
+        s.createIndex('entity','entity',{unique:false});
+        s.createIndex('entityId','entityId',{unique:false});
+        s.createIndex('ts','ts',{unique:false});
+      }
+      if(!d.objectStoreNames.contains('documents')){
+        const s=d.createObjectStore('documents',{keyPath:'id',autoIncrement:true});
+        s.createIndex('tenantId','tenantId',{unique:false});
+        s.createIndex('flatId','flatId',{unique:false});
+      }
     };
     r.onsuccess=e=>{db=e.target.result;res()};
     r.onerror=e=>rej(e);
@@ -522,6 +544,8 @@ function initDB(){
 }
 
 const g=(st,id)=>new Promise((res,rej)=>{const t=db.transaction(st,'readonly'),r=t.objectStore(st).get(id);r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
+// Query by index: gaIdx('billing','flatId',42)
+const gaIdx=(st,idx,val)=>new Promise((res,rej)=>{const t=db.transaction(st,'readonly'),r=t.objectStore(st).index(idx).getAll(val);r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
 const ga=(st)=>new Promise((res,rej)=>{const t=db.transaction(st,'readonly'),r=t.objectStore(st).getAll();r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
 const add=(st,d)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).add(d);r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
 const put=(st,d)=>new Promise((res,rej)=>{const t=db.transaction(st,'readwrite'),r=t.objectStore(st).put(d);r.onsuccess=()=>res(r.result);r.onerror=e=>rej(e)});
@@ -535,6 +559,19 @@ async function setSetting(key,value){
   await put('settings',{key,value});
 }
 
+// Audit log helper — call after any meaningful create/edit/delete
+async function auditLog(action, entity, entityId, details){
+  try{
+    await add('auditLog',{
+      ts:new Date().toISOString(),
+      action,        // 'create' | 'edit' | 'delete' | 'payment'
+      entity,        // 'billing' | 'tenant' | 'expense' | 'maintenance'
+      entityId,
+      details        // free-form object: {before, after, note}
+    });
+  }catch(e){/* never break main flow due to audit failure */}
+}
+
 // ═══════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════
@@ -546,6 +583,25 @@ let activeBuilding='All'; // global building filter — persists across all tabs
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const monthKey=()=>`${cYear}-${String(cMonth+1).padStart(2,'0')}`;
 const monthLabel=()=>`${MONTHS[cMonth]} ${cYear}`;
+
+// Calculate late fee for a bill (async — reads settings)
+async function calcLateFee(bill){
+  const feeAmt=parseFloat(await getSetting('lateFeeAmt','0'))||0;
+  if(!feeAmt||bill.rentStatus==='Paid') return 0;
+  const feeType=await getSetting('lateFeeType','flat');
+  const graceDays=parseInt(await getSetting('lateGraceDays','5'))||0;
+  const dueDay=parseInt(await getSetting('rentDueDay','1'))||1;
+  const [y,m]=bill.month.split('-').map(Number);
+  const dueDate=new Date(y,m-1,dueDay);
+  const today=new Date();today.setHours(0,0,0,0);
+  const daysLate=Math.max(0,Math.floor((today-dueDate)/86400000)-graceDays);
+  if(daysLate<=0) return 0;
+  const rent=parseFloat(bill.rentDue)||0;
+  if(feeType==='flat') return feeAmt;
+  if(feeType==='percent') return Math.round(rent*feeAmt/100);
+  if(feeType==='daily') return daysLate*feeAmt;
+  return 0;
+}
 
 // ═══════════════════════════════════════════
 // BUILDING FILTER HELPERS
@@ -851,6 +907,8 @@ async function renderFlats(query=''){
       <div class="cact">
         <button class="btn btn-sm btn-ghost" onclick="viewFlat(${f.id})">👁 View</button>
         <button class="btn btn-sm btn-outline" onclick="editFlat(${f.id})">✏️ Edit</button>
+        <button class="btn btn-sm btn-ghost" style="color:var(--blue)" onclick="viewFlatLedger(${f.id})">📒 Ledger</button>
+        <button class="btn btn-sm btn-ghost" style="color:var(--teal)" onclick="showWaterTrend(${f.id})">💧 Water</button>
         <button class="btn btn-sm btn-ghost" style="color:var(--red);margin-left:auto" onclick="deleteFlat(${f.id},'${esc(f.flatNo)}')">🗑</button>
       </div>
     </div>`;
@@ -1043,6 +1101,8 @@ async function renderTenants(query=''){
       <div class="cact">
         <button class="btn btn-sm btn-ghost" onclick="viewTenant(${t.id})">👁 View</button>
         <button class="btn btn-sm btn-outline" onclick="editTenant(${t.id})">✏️ Edit</button>
+        <button class="btn btn-sm btn-ghost" style="color:var(--blue)" onclick="viewFlatLedger(${t.flatId})">📒 Ledger</button>
+        <button class="btn btn-sm btn-ghost" style="color:var(--purple)" onclick="openDocuments(${t.id})">📁 Docs</button>
         <button class="btn btn-sm btn-ghost" style="color:var(--red);margin-left:auto" onclick="deleteTenant(${t.id},'${esc(t.name)}')">🗑</button>
       </div>
     </div>`;
@@ -1069,7 +1129,8 @@ async function openTenantForm(data){
       <div class="fg"><label class="fl">Full Name *</label>
         <input class="fc" id="tf-name" value="${esc(f.name||'')}" placeholder="e.g. Rajesh Kumar"></div>
       <div class="fg"><label class="fl">Phone</label>
-        <input class="fc" id="tf-phone" type="tel" value="${esc(f.phone||'')}" placeholder="+91 98765 43210"></div>
+        <input class="fc" id="tf-phone" type="tel" value="${esc(f.phone||'')}" placeholder="+91 98765 43210" oninput="checkDuplicatePhone()">
+        <div id="tf-phone-warn"></div></div>
     </div>
     <div class="frow">
       <div class="fg"><label class="fl">Email</label>
@@ -1190,12 +1251,15 @@ async function _doSaveTenant(flatId, name){
     updatedAt:new Date().toISOString()
   };
   if(editId){
+    const prev=await g('tenants',editId);
     data.id=editId;await put('tenants',data);
+    auditLog('edit','tenant',editId,{before:prev,after:data});
     const fl=await g('flats',flatId);
     if(fl&&fl.status!=='Occupied') await put('flats',{...fl,status:'Occupied',updatedAt:new Date().toISOString()});
     toast('✅ Tenant updated');
   } else {
-    data.createdAt=new Date().toISOString();await add('tenants',data);
+    data.createdAt=new Date().toISOString();const tid=await add('tenants',data);
+    auditLog('create','tenant',tid,{after:data});
     const fl=await g('flats',flatId);
     if(fl&&fl.status!=='Occupied'){await put('flats',{...fl,status:'Occupied',updatedAt:new Date().toISOString()});toast('✅ Tenant registered · Flat marked Occupied');}
     else toast('✅ Tenant registered');
@@ -1332,10 +1396,18 @@ async function renderBilling(){
     return;
   }
 
+  // Pre-compute late fees for all pending bills (async before map)
+  const lateFeeMap={};
+  for(const fl of filteredFlats){
+    const b=mBills.find(x=>x.flatId===fl.id);
+    if(b&&b.rentStatus!=='Paid') lateFeeMap[fl.id]=await calcLateFee(b);
+  }
+
   document.getElementById('bill-list').innerHTML=filteredFlats.map(fl=>{
     const bill=mBills.find(b=>b.flatId===fl.id);
     const ten=tenants.find(t=>t.flatId===fl.id);
     const isPaid=bill?.rentStatus==='Paid';
+    const lateFee=lateFeeMap[fl.id]||0;
     const stBadge=bill?`<span class="badge ${isPaid?'bg-green':bill.rentStatus==='Overdue'?'bg-red':'bg-yellow'}">${bill.rentStatus}</span>`:
       `<span class="badge bg-gray">No Entry</span>`;
     return`<div class="card">
@@ -1353,13 +1425,16 @@ async function renderBilling(){
       ${bill?`<div class="util-row" style="font-size:11px;color:var(--gray-600);gap:8px">
         ${bill.waterAmount?`<span style="display:inline-flex;align-items:center;gap:3px;background:${bill.waterStatus==='Paid'?'var(--teal-lt)':'var(--gray-100)'};padding:3px 7px;border-radius:20px;color:${bill.waterStatus==='Paid'?'var(--teal)':'var(--gray-500)'}">💧 ₹${parseFloat(bill.waterAmount).toLocaleString('en-IN')} ${bill.waterStatus==='Paid'?'✓':'⏳'}</span>`:''}
         ${bill.elecAmount?`<span style="display:inline-flex;align-items:center;gap:3px;background:${bill.elecStatus==='Paid'?'var(--amber-lt)':'var(--gray-100)'};padding:3px 7px;border-radius:20px;color:${bill.elecStatus==='Paid'?'var(--amber)':'var(--gray-500)'}">⚡ ₹${parseFloat(bill.elecAmount).toLocaleString('en-IN')} ${bill.elecStatus==='Paid'?'✓':'⏳'}</span>`:''}
+        ${lateFee>0?`<span style="display:inline-flex;align-items:center;gap:3px;background:var(--red-lt,#fee2e2);padding:3px 7px;border-radius:20px;color:var(--red)">⏰ Late Fee ₹${lateFee.toLocaleString('en-IN')}</span>`:''}
       </div>`:''}
       <div class="cact">
         ${!isPaid?`<button class="btn btn-sm btn-green" onclick="quickPaid(${fl.id},${fl.rent},'${mk}',${bill?.id||'null'})">✓ Mark Paid</button>`:''}
         ${!isPaid&&bill?`<button class="btn btn-sm btn-ghost" onclick="openPartialPayment(${bill.id})">⊹ Partial</button>`:''}
+        ${bill?`<button class="btn btn-sm btn-ghost" style="color:var(--gray-500)" onclick="viewPaymentHistory(${bill.id})">💳 Payments</button>`:''}
         ${bill&&bill.waterAmount&&bill.waterStatus!=='Paid'?`<button class="btn btn-sm btn-teal" onclick="quickPayUtil(${bill.id},'water')">💧 Pay Water</button>`:''}
         ${bill&&bill.elecAmount&&bill.elecStatus!=='Paid'?`<button class="btn btn-sm btn-amber" onclick="quickPayUtil(${bill.id},'elec')">⚡ Pay Elec</button>`:''}
         ${bill?`<button class="btn btn-sm btn-outline" onclick="editBill(${bill.id})">✏️ Edit</button>`:`<button class="btn btn-sm btn-amber" onclick="openBillForm(${fl.id})">+ Add Entry</button>`}
+        <button class="btn btn-sm btn-ghost" style="color:var(--blue)" onclick="viewFlatLedger(${fl.id})">📒 History</button>
         ${isPaid&&bill?`<button class="btn btn-sm btn-ghost" style="color:var(--green)" onclick="generateReceipt(${bill.id},${fl.id})">🧾 Receipt</button>`:''}
         ${isPaid&&bill?`<button class="btn btn-sm btn-ghost" style="color:var(--teal)" onclick="sendReceiptWA(${bill.id},${fl.id})">📲 WA Receipt</button>`:''}
       </div>
@@ -1696,7 +1771,10 @@ async function saveBill(){
   };
 
   if(editId){
-    data.id=editId;await put('billing',data);toast('✅ Updated');
+    const prev=await g('billing',editId);
+    data.id=editId;await put('billing',data);
+    auditLog('edit','billing',editId,{before:prev,after:data});
+    toast('✅ Updated');
     closeModal();renderBilling();renderDash();
     return;
   }
@@ -1728,7 +1806,9 @@ async function saveBill(){
     return;
   }
 
-  await add('billing',data);toast('✅ Billing entry saved');
+  const newId=await add('billing',data);
+  auditLog('create','billing',newId,{after:data});
+  toast('✅ Billing entry saved');
   closeModal();renderBilling();renderDash();
 }
 
@@ -2298,6 +2378,10 @@ async function openSettings(){
   const expiryDays=await getSetting('expiryDays','60');
   const accounts=await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque');
   const blocks=await getSetting('blocks','Block A,Block B,Block C');
+  const lateFeeType=await getSetting('lateFeeType','flat');
+  const lateFeeAmt=await getSetting('lateFeeAmt','0');
+  const lateGraceDays=await getSetting('lateGraceDays','5');
+  const rentDueDay=await getSetting('rentDueDay','1');
 
   openModal('⚙️ Settings',`
     <div class="setting-item">
@@ -2321,13 +2405,36 @@ async function openSettings(){
       <label class="setting-label">🏦 Payment Accounts (comma-separated)</label>
       <textarea class="fc" id="s-accounts" style="min-height:80px">${esc(accounts)}</textarea>
     </div>
+    <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.5px;margin-top:8px">— Late Fee —</div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Rent Due Day of Month</label>
+        <input class="fc" id="s-dueday" type="number" min="1" max="28" value="${rentDueDay}" placeholder="1"></div>
+      <div class="fg"><label class="fl">Grace Period (days)</label>
+        <input class="fc" id="s-grace" type="number" min="0" value="${lateGraceDays}" placeholder="5"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Late Fee Type</label>
+        <select class="fc" id="s-lftype">
+          <option value="flat" ${lateFeeType==='flat'?'selected':''}>Flat Amount (₹)</option>
+          <option value="percent" ${lateFeeType==='percent'?'selected':''}>% of Rent Due</option>
+          <option value="daily" ${lateFeeType==='daily'?'selected':''}>₹ per Day</option>
+        </select></div>
+      <div class="fg"><label class="fl">Amount / Rate</label>
+        <input class="fc" id="s-lfamt" type="number" min="0" value="${lateFeeAmt}" placeholder="0"></div>
+    </div>
+    <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px">Set Amount to 0 to disable late fees</div>
     <button class="btn btn-primary btn-full" onclick="saveSettings()" style="margin-top:4px">💾 Save Settings</button>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-ghost btn-full" onclick="exportSettings()" style="font-size:12px">📤 Export Settings</button>
       <button class="btn btn-ghost btn-full" onclick="document.getElementById('settings-import-file').click()" style="font-size:12px">📥 Import Settings</button>
     </div>
     <input type="file" id="settings-import-file" accept=".json" style="display:none" onchange="importSettings(this)">
-    <div style="font-size:11px;color:var(--gray-400);text-align:center;margin-top:6px">Export saves a .json backup · Import restores from a backup file</div>
+    <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:var(--amber);text-transform:uppercase;letter-spacing:.5px;margin-top:10px">— Data Tools —</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-amber btn-full" onclick="runDataRepair()" style="font-size:12px">🔧 Repair Bill Totals</button>
+      <button class="btn btn-ghost btn-full" onclick="viewAuditLog()" style="font-size:12px">📋 Audit Log</button>
+    </div>
+    <div style="font-size:11px;color:var(--gray-400);text-align:center;margin-top:6px">Repair recalculates totals on all billing records · Audit log shows all changes</div>
   `);
 }
 
@@ -2337,17 +2444,61 @@ async function saveSettings(){
   await setSetting('expiryDays',document.getElementById('s-exp').value.trim());
   await setSetting('blocks',document.getElementById('s-blocks').value.trim());
   await setSetting('accounts',document.getElementById('s-accounts').value.trim());
+  await setSetting('rentDueDay',document.getElementById('s-dueday').value.trim()||'1');
+  await setSetting('lateGraceDays',document.getElementById('s-grace').value.trim()||'5');
+  await setSetting('lateFeeType',document.getElementById('s-lftype').value);
+  await setSetting('lateFeeAmt',document.getElementById('s-lfamt').value.trim()||'0');
   toast('✅ Settings saved');closeModal();renderDash();
+}
+
+async function runDataRepair(){
+  const bills=await ga('billing');
+  let fixed=0;
+  for(const b of bills){
+    const wPaid=b.waterStatus==='Paid';const ePaid=b.elecStatus==='Paid';
+    const correctTotal=(parseFloat(b.rentPaid)||0)+(wPaid?parseFloat(b.waterAmount)||0:0)+(ePaid?parseFloat(b.elecAmount)||0:0);
+    const correctDue=(parseFloat(b.rentDue)||0)+(parseFloat(b.waterAmount)||0)+(parseFloat(b.elecAmount)||0);
+    if(Math.abs(correctTotal-(parseFloat(b.total)||0))>0.01||Math.abs(correctDue-(parseFloat(b.totalDue)||0))>0.01){
+      await put('billing',{...b,total:correctTotal,totalDue:correctDue});fixed++;
+    }
+  }
+  toast(`✅ Repair complete — ${fixed} bill${fixed!==1?'s':''} fixed`);
+  renderBilling();renderDash();
+}
+
+async function viewAuditLog(){
+  const logs=await ga('auditLog');
+  logs.sort((a,b)=>b.ts.localeCompare(a.ts));
+  const recent=logs.slice(0,100);
+  const actionColor={create:'var(--green)',edit:'var(--amber)',delete:'var(--red)',payment:'var(--teal)'};
+  openModal('📋 Audit Log',`
+    <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px">${logs.length} entries (showing last 100)</div>
+    ${recent.length===0?`<div class="empty"><div class="eico">📋</div><div class="etitle">No audit entries yet</div></div>`:''}
+    ${recent.map(l=>`
+      <div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--gray-100);font-size:12px;align-items:flex-start">
+        <span style="background:${actionColor[l.action]||'var(--gray-400)'};color:white;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;flex-shrink:0;margin-top:2px">${(l.action||'').toUpperCase()}</span>
+        <div style="flex:1">
+          <div style="font-weight:700;color:var(--gray-700)">${esc(l.entity)} #${l.entityId}</div>
+          <div style="color:var(--gray-500)">${l.details?.note||''}</div>
+        </div>
+        <div style="color:var(--gray-400);flex-shrink:0;font-size:10px">${l.ts?l.ts.replace('T',' ').slice(0,16):''}</div>
+      </div>`).join('')}
+    ${logs.length>100?`<div style="text-align:center;padding:8px;font-size:11px;color:var(--gray-400)">Showing 100 of ${logs.length}</div>`:''}
+  `);
 }
 
 // All recognised setting keys and their defaults
 const SETTING_KEYS=[
-  {key:'society',   label:'Society / Building Name', default:'Society Management'},
-  {key:'countryCode',label:'Country Code',           default:'91'},
-  {key:'expiryDays', label:'Expiry Alert Days',      default:'60'},
-  {key:'blocks',     label:'Blocks / Buildings',     default:'Block A,Block B,Block C'},
-  {key:'accounts',   label:'Payment Accounts',       default:'Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque'},
-  {key:'waterRate',  label:'Water Rate (₹/unit)',    default:'0.10'},
+  {key:'society',      label:'Society / Building Name', default:'Society Management'},
+  {key:'countryCode',  label:'Country Code',            default:'91'},
+  {key:'expiryDays',   label:'Expiry Alert Days',       default:'60'},
+  {key:'blocks',       label:'Blocks / Buildings',      default:'Block A,Block B,Block C'},
+  {key:'accounts',     label:'Payment Accounts',        default:'Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque'},
+  {key:'waterRate',    label:'Water Rate (₹/unit)',     default:'0.10'},
+  {key:'rentDueDay',   label:'Rent Due Day',            default:'1'},
+  {key:'lateGraceDays',label:'Late Fee Grace Days',     default:'5'},
+  {key:'lateFeeType',  label:'Late Fee Type',           default:'flat'},
+  {key:'lateFeeAmt',   label:'Late Fee Amount/Rate',    default:'0'},
 ];
 
 async function exportSettings(){
@@ -4822,14 +4973,41 @@ async function openAddMaintenance(data){
         <input class="fc" id="mt-cost" type="number" value="${f.cost||''}" placeholder="0"></div>
     </div>
     <div class="fg"><label class="fl">Remarks / Resolution</label>
-      <input class="fc" id="mt-remarks" value="${esc(f.remarks||'')}" placeholder="Vendor name, action taken…"></div>
+      <input class="fc" id="mt-remarks" value="${esc(f.remarks||'')}" placeholder="Action taken, notes…"></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Vendor / Contractor</label>
+        <input class="fc" id="mt-vendor" value="${esc(f.vendor||'')}" placeholder="e.g. ABC Plumbers"></div>
+      <div class="fg"><label class="fl">Vendor Phone</label>
+        <input class="fc" id="mt-vphone" type="tel" value="${esc(f.vendorPhone||'')}" placeholder="98765 43210"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;background:var(--gray-50);border-radius:8px;padding:9px 12px;margin-bottom:8px;cursor:pointer;font-size:12px;font-weight:700;color:var(--blue)">
+      📷 ${f.photo?'Replace Photo':'Attach Photo'}
+      <input type="file" accept="image/*" style="display:none" onchange="previewMaintPhoto(this)">
+      ${f.photo?`<span style="font-size:10px;color:var(--green)">✓ Photo attached</span>`:'<span style="font-size:10px;color:var(--gray-400)">optional</span>'}
+    </label>
+    <div id="mt-photo-preview" style="margin-bottom:8px">${f.photo?`<img src="${f.photo}" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px">`:''}</div>
+    <input type="hidden" id="mt-photo-data" value="${f.photo?'KEEP':''}">
     <button class="btn btn-primary btn-full" onclick="saveMaintenance()" style="margin-top:4px">${editId?'✅ Update':'🔧 Log Request'}</button>
   `);
+}
+
+function previewMaintPhoto(input){
+  const file=input.files[0];if(!file)return;
+  if(file.size>3*1024*1024){toast('⚠️ Photo too large (max 3 MB)');return}
+  const reader=new FileReader();
+  reader.onload=e=>{
+    document.getElementById('mt-photo-data').value=e.target.result;
+    document.getElementById('mt-photo-preview').innerHTML=`<img src="${e.target.result}" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px">`;
+  };
+  reader.readAsDataURL(file);
 }
 
 async function saveMaintenance(){
   const desc=document.getElementById('mt-desc')?.value.trim();
   if(!desc){toast('⚠️ Description is required');return}
+  const photoVal=document.getElementById('mt-photo-data')?.value||'';
+  let photo=photoVal==='KEEP'?null:photoVal||null;
+  if(editId&&photoVal==='KEEP'){const ex=await g('maintenance',editId);photo=ex?.photo||null;}
   const data={
     flatId:parseInt(document.getElementById('mt-flat')?.value)||null,
     category:document.getElementById('mt-cat')?.value,
@@ -4839,6 +5017,9 @@ async function saveMaintenance(){
     status:document.getElementById('mt-status')?.value||'Open',
     cost:parseFloat(document.getElementById('mt-cost')?.value)||0,
     remarks:document.getElementById('mt-remarks')?.value.trim()||'',
+    vendor:document.getElementById('mt-vendor')?.value.trim()||'',
+    vendorPhone:document.getElementById('mt-vphone')?.value.trim()||'',
+    photo:photo||null,
     updatedAt:new Date().toISOString()
   };
   if(editId){
@@ -4878,8 +5059,11 @@ async function viewMaintenance(filter='Open'){
             <div class="cname">${esc(m.category)} ${m.priority==='Urgent'||m.priority==='High'?'🔴':''}</div>
             <div class="csub">${fl?esc(fl.block)+'-'+esc(fl.flatNo):'Common'} · ${m.reportedDate||''}</div>
             <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${esc(m.description)}</div>
-            ${m.cost?`<div style="font-size:11px;color:var(--amber)">Cost: ₹${m.cost.toLocaleString('en-IN')}</div>`:''}
+            ${m.cost?`<div style="font-size:11px;color:var(--amber)">Cost: ₹${m.cost.toLocaleString('en-IN')}${m.vendor?` · 🔧 ${esc(m.vendor)}`:''}</div>`:''}
+            ${!m.cost&&m.vendor?`<div style="font-size:11px;color:var(--gray-500)">🔧 ${esc(m.vendor)}${m.vendorPhone?' · '+esc(m.vendorPhone):''}</div>`:''}
           </div>
+          ${m.photo?`<img src="${m.photo}" style="width:56px;height:56px;object-fit:cover;border-radius:7px;margin-left:4px;cursor:pointer;flex-shrink:0" onclick="openModal('📷 Photo','<img src=\\'${m.photo}\\' style=\\'width:100%;border-radius:8px\\'>')">`:''}
+
           <div style="flex-shrink:0">
             <span class="badge ${m.status==='Resolved'?'bg-green':m.status==='In Progress'?'bg-yellow':'bg-red'}">${m.status}</span>
           </div>
@@ -5143,6 +5327,516 @@ async function openDriveBackupSettings(){
 }
 
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// FLAT LEDGER (full history per flat)
+// ═══════════════════════════════════════════
+async function viewFlatLedger(flatId){
+  const fl=await g('flats',flatId);
+  const ten=(await ga('tenants')).find(t=>t.flatId===flatId);
+  const allBills=(await gaIdx('billing','flatId',flatId)).sort((a,b)=>b.month.localeCompare(a.month));
+  const allPay=await ga('payments');
+
+  let totalDue=0,totalPaid=0;
+  const rows=allBills.map(b=>{
+    const due=(parseFloat(b.rentDue)||0)+(parseFloat(b.waterAmount)||0)+(parseFloat(b.elecAmount)||0);
+    const paid=(parseFloat(b.rentPaid)||0)+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0)+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0);
+    const balance=due-paid;
+    totalDue+=due;totalPaid+=paid;
+    const partials=allPay.filter(p=>p.billId===b.id);
+    return{b,due,paid,balance,partials};
+  });
+  const totalBalance=totalDue-totalPaid;
+
+  openModal(`📒 ${esc(fl?.block)} — ${esc(fl?.flatNo)} · Full Ledger`,`
+    ${ten?`<div style="background:var(--blue-lt);border-radius:9px;padding:9px 12px;margin-bottom:10px;font-size:12px">
+      <b>${esc(ten.name)}</b> · 📞 ${esc(ten.phone||'—')} · Move-in: ${ten.moveIn||'—'}
+    </div>`:''}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px">
+      <div class="scard"><div class="snum" style="font-size:13px;color:var(--gray-600)">₹${totalDue.toLocaleString('en-IN')}</div><div class="slbl">Total Due</div></div>
+      <div class="scard"><div class="snum" style="font-size:13px;color:var(--green)">₹${totalPaid.toLocaleString('en-IN')}</div><div class="slbl">Total Paid</div></div>
+      <div class="scard"><div class="snum" style="font-size:13px;color:${totalBalance>0?'var(--red)':'var(--green)'}">₹${Math.abs(totalBalance).toLocaleString('en-IN')}</div><div class="slbl">${totalBalance>0?'Outstanding':'Advance'}</div></div>
+    </div>
+    <div class="rtable"><table>
+      <tr><th>Month</th><th>Rent</th><th>Water</th><th>Elec</th><th>Paid</th><th>Balance</th><th>Status</th></tr>
+      ${rows.map(({b,due,paid,balance,partials})=>`
+        <tr>
+          <td><b>${b.month}</b></td>
+          <td>₹${(parseFloat(b.rentDue)||0).toLocaleString('en-IN')}</td>
+          <td>${b.waterAmount?`<span style="color:${b.waterStatus==='Paid'?'var(--teal)':'var(--gray-500)'}">₹${parseFloat(b.waterAmount).toLocaleString('en-IN')} ${b.waterStatus==='Paid'?'✓':'⏳'}</span>`:'-'}</td>
+          <td>${b.elecAmount?`<span style="color:${b.elecStatus==='Paid'?'var(--amber)':'var(--gray-500)'}">₹${parseFloat(b.elecAmount).toLocaleString('en-IN')} ${b.elecStatus==='Paid'?'✓':'⏳'}</span>`:'-'}</td>
+          <td style="color:var(--green);font-weight:700">₹${paid.toLocaleString('en-IN')}</td>
+          <td style="color:${balance>0?'var(--red)':'var(--green)'};font-weight:700">${balance>0?'-':''}₹${Math.abs(balance).toLocaleString('en-IN')}</td>
+          <td><span class="badge ${b.rentStatus==='Paid'?'bg-green':b.rentStatus==='Overdue'?'bg-red':'bg-yellow'}" style="font-size:10px">${b.rentStatus}</span></td>
+        </tr>
+        ${partials.length?`<tr style="background:var(--gray-50)"><td colspan="7" style="font-size:11px;color:var(--gray-500);padding:3px 8px">
+          Partial payments: ${partials.map(p=>`₹${p.amount.toLocaleString('en-IN')} on ${p.date}`).join(' · ')}
+        </td></tr>`:''}
+      `).join('')}
+    </table></div>
+    ${rows.length===0?`<div class="empty"><div class="eico">📒</div><div class="etitle">No billing records yet</div></div>`:''}
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-primary btn-full" onclick="closeModal();gotoTab('billing')">Go to Billing</button>
+      <button class="btn btn-ghost btn-full" onclick="exportFlatLedgerPDF(${flatId})">🖨️ Print / PDF</button>
+    </div>
+  `);
+}
+
+async function exportFlatLedgerPDF(flatId){
+  const el=document.querySelector('.msh .mbody');
+  if(!el)return;
+  const fl=await g('flats',flatId);
+  const iframe=document.createElement('iframe');
+  iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+  iframe.srcdoc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ledger ${fl?.block}-${fl?.flatNo}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:5px 8px;text-align:left}th{background:#f3f4f6;font-weight:700}
+@page{size:A4;margin:15mm}.badge{border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700}
+</style></head><body>${el.innerHTML}</body></html>`;
+  document.body.appendChild(iframe);
+  iframe.onload=()=>{iframe.contentWindow.print();setTimeout(()=>document.body.removeChild(iframe),3000)};
+}
+
+// ═══════════════════════════════════════════
+// OUTSTANDING DUES AGING REPORT
+// ═══════════════════════════════════════════
+async function showAgingReport(){
+  const allBills=await ga('billing');
+  const allFlats=await ga('flats');
+  const tenants=await ga('tenants');
+  const today=new Date();today.setHours(0,0,0,0);
+  const rentDueDay=parseInt(await getSetting('rentDueDay','1'))||1;
+
+  const pending=allBills.filter(b=>['Pending','Overdue'].includes(b.rentStatus));
+  if(!pending.length){
+    openModal('⏳ Dues Aging',`<div class="empty"><div class="eico">✅</div><div class="etitle">No outstanding dues</div></div>`);return;
+  }
+
+  const buckets={b30:[],b60:[],b90:[],b90p:[]};
+  let total=0;
+  for(const b of pending){
+    const [y,m]=b.month.split('-').map(Number);
+    const dueDate=new Date(y,m-1,rentDueDay);
+    const days=Math.floor((today-dueDate)/86400000);
+    const fl=allFlats.find(f=>f.id===b.flatId);
+    const ten=tenants.find(t=>t.flatId===b.flatId);
+    const amt=(parseFloat(b.rentDue)||0)-(parseFloat(b.rentPaid)||0);
+    if(amt<=0) continue;
+    total+=amt;
+    const entry={fl,ten,b,days,amt};
+    if(days<=30) buckets.b30.push(entry);
+    else if(days<=60) buckets.b60.push(entry);
+    else if(days<=90) buckets.b90.push(entry);
+    else buckets.b90p.push(entry);
+  }
+
+  const bucketRow=(label,color,entries)=>entries.length===0?'':
+    `<div style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:800;color:${color};margin-bottom:6px;display:flex;justify-content:space-between">
+        <span>${label} (${entries.length} flat${entries.length!==1?'s':''})</span>
+        <span>₹${entries.reduce((s,e)=>s+e.amt,0).toLocaleString('en-IN')}</span>
+      </div>
+      ${entries.map(({fl,ten,b,days,amt})=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--gray-50);border-radius:7px;margin-bottom:4px;font-size:12px">
+          <div>
+            <div style="font-weight:700">${esc(fl?.block||'')}—${esc(fl?.flatNo||'')} · ${esc(ten?.name||'Vacant')}</div>
+            <div style="font-size:10px;color:var(--gray-500)">${b.month} · ${days} days overdue</div>
+          </div>
+          <div style="font-weight:800;color:${color}">₹${amt.toLocaleString('en-IN')}</div>
+        </div>`).join('')}
+    </div>`;
+
+  openModal('⏳ Dues Aging Report',`
+    <div style="background:var(--red-lt,#fee2e2);border-radius:9px;padding:10px 13px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:13px;font-weight:700;color:var(--red)">Total Outstanding</span>
+      <span style="font-size:16px;font-weight:900;color:var(--red)">₹${total.toLocaleString('en-IN')}</span>
+    </div>
+    ${bucketRow('🟢 0–30 days','var(--amber)',buckets.b30)}
+    ${bucketRow('🟠 31–60 days','var(--amber)',buckets.b60)}
+    ${bucketRow('🔴 61–90 days','var(--red)',buckets.b90)}
+    ${bucketRow('🚨 90+ days','var(--red)',buckets.b90p)}
+  `);
+}
+
+// ═══════════════════════════════════════════
+// TENANT YEAR-END STATEMENT
+// ═══════════════════════════════════════════
+async function openYearEndStatement(){
+  const allTenants=await ga('tenants');
+  const allFlats=await ga('flats');
+  const years=[...new Set((await ga('billing')).map(b=>b.month.split('-')[0]))].sort().reverse();
+  const society=await getSetting('society','Society Management');
+
+  openModal('📄 Year-End Statement',`
+    <div class="frow">
+      <div class="fg"><label class="fl">Tenant</label>
+        <select class="fc" id="yes-tenant">
+          <option value="">Select tenant…</option>
+          ${allTenants.filter(t=>!t.movedOut).map(t=>{const fl=allFlats.find(f=>f.id===t.flatId);return`<option value="${t.id}">${esc(t.name)} — ${esc(fl?.block||'')} ${esc(fl?.flatNo||'')}</option>`}).join('')}
+        </select></div>
+      <div class="fg"><label class="fl">Year</label>
+        <select class="fc" id="yes-year">
+          ${years.map(y=>`<option>${y}</option>`).join('')}
+        </select></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary btn-full" onclick="generateYearEndStatement()">📄 Generate</button>
+    </div>
+    <div id="yes-content" style="margin-top:12px"></div>
+  `);
+}
+
+async function generateYearEndStatement(){
+  const tenantId=parseInt(document.getElementById('yes-tenant')?.value);
+  const year=document.getElementById('yes-year')?.value;
+  if(!tenantId||!year){toast('⚠️ Select tenant and year');return}
+
+  const ten=await g('tenants',tenantId);
+  const fl=await g('flats',ten.flatId);
+  const allBills=(await ga('billing')).filter(b=>b.flatId===ten.flatId&&b.month.startsWith(year));
+  allBills.sort((a,b)=>a.month.localeCompare(b.month));
+  const society=await getSetting('society','Society Management');
+
+  const totalRent=allBills.reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0);
+  const totalWater=allBills.reduce((s,b)=>s+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0),0);
+  const totalElec=allBills.reduce((s,b)=>s+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0),0);
+  const grandTotal=totalRent+totalWater+totalElec;
+
+  const html=`
+    <div id="yes-print-area" style="font-family:Arial,sans-serif;font-size:13px;color:#111">
+      <div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:800">${esc(society)}</div>
+        <div style="font-size:13px;color:#555">Annual Payment Statement — ${year}</div>
+      </div>
+      <div style="background:#f3f4f6;border-radius:8px;padding:10px 14px;margin-bottom:12px">
+        <div><b>Tenant:</b> ${esc(ten.name)}</div>
+        <div><b>Flat:</b> ${esc(fl?.block||'')} — ${esc(fl?.flatNo||'')}</div>
+        <div><b>Phone:</b> ${esc(ten.phone||'—')}</div>
+        <div><b>Deposit:</b> ₹${(parseFloat(ten.deposit)||0).toLocaleString('en-IN')}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
+        <tr style="background:#e5e7eb"><th style="padding:6px 8px;text-align:left;border:1px solid #d1d5db">Month</th><th style="padding:6px 8px;text-align:right;border:1px solid #d1d5db">Rent</th><th style="padding:6px 8px;text-align:right;border:1px solid #d1d5db">Water</th><th style="padding:6px 8px;text-align:right;border:1px solid #d1d5db">Elec</th><th style="padding:6px 8px;text-align:right;border:1px solid #d1d5db">Total</th><th style="padding:6px 8px;text-align:center;border:1px solid #d1d5db">Status</th></tr>
+        ${allBills.map(b=>{
+          const bp=parseFloat(b.rentPaid)||0;const bw=b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0;const be=b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0;
+          return`<tr><td style="padding:5px 8px;border:1px solid #e5e7eb"><b>${b.month}</b></td><td style="padding:5px 8px;text-align:right;border:1px solid #e5e7eb">₹${bp.toLocaleString('en-IN')}</td><td style="padding:5px 8px;text-align:right;border:1px solid #e5e7eb">${bw?`₹${bw.toLocaleString('en-IN')}`:'-'}</td><td style="padding:5px 8px;text-align:right;border:1px solid #e5e7eb">${be?`₹${be.toLocaleString('en-IN')}`:'-'}</td><td style="padding:5px 8px;text-align:right;font-weight:700;border:1px solid #e5e7eb">₹${(bp+bw+be).toLocaleString('en-IN')}</td><td style="padding:5px 8px;text-align:center;border:1px solid #e5e7eb;color:${b.rentStatus==='Paid'?'green':'orange'}">${b.rentStatus}</td></tr>`;
+        }).join('')}
+        <tr style="background:#f9fafb;font-weight:800"><td style="padding:6px 8px;border:1px solid #d1d5db">TOTAL</td><td style="padding:6px 8px;text-align:right;border:1px solid #d1d5db">₹${totalRent.toLocaleString('en-IN')}</td><td style="padding:6px 8px;text-align:right;border:1px solid #d1d5db">₹${totalWater.toLocaleString('en-IN')}</td><td style="padding:6px 8px;text-align:right;border:1px solid #d1d5db">₹${totalElec.toLocaleString('en-IN')}</td><td style="padding:6px 8px;text-align:right;border:1px solid #d1d5db;color:green">₹${grandTotal.toLocaleString('en-IN')}</td><td style="border:1px solid #d1d5db"></td></tr>
+      </table>
+      <div style="font-size:11px;color:#9ca3af;text-align:center">Generated on ${new Date().toLocaleDateString('en-IN')} · ${esc(society)}</div>
+    </div>`;
+
+  document.getElementById('yes-content').innerHTML=html+`
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary btn-full" onclick="printYearEndStatement()">🖨️ Print / PDF</button>
+      <button class="btn btn-teal btn-full" onclick="sendYearEndWA(${tenantId},'${year}')">📲 Send WA</button>
+    </div>`;
+}
+
+function printYearEndStatement(){
+  const content=document.getElementById('yes-print-area')?.innerHTML||'';
+  const iframe=document.createElement('iframe');
+  iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+  iframe.srcdoc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Annual Statement</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:20px;max-width:700px;margin:0 auto}@page{size:A4;margin:15mm}</style>
+</head><body>${content}</body></html>`;
+  document.body.appendChild(iframe);
+  iframe.onload=()=>{iframe.contentWindow.print();setTimeout(()=>document.body.removeChild(iframe),3000)};
+}
+
+async function sendYearEndWA(tenantId,year){
+  const win=window.open('','_blank');
+  const ten=await g('tenants',tenantId);
+  const fl=await g('flats',ten.flatId);
+  const cc=await getSetting('countryCode','91');
+  const society=await getSetting('society','Society Management');
+  if(!ten?.phone){if(win)win.close();toast('⚠️ No phone');return}
+  const allBills=(await ga('billing')).filter(b=>b.flatId===ten.flatId&&b.month.startsWith(year)).sort((a,b)=>a.month.localeCompare(b.month));
+  const total=allBills.reduce((s,b)=>s+(parseFloat(b.rentPaid)||0)+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0)+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0),0);
+  const lines=[`Dear ${ten.name},`,``,`📄 *Annual Payment Summary — ${year}*`,`────────────────────`,`Flat: *${fl?.block} — ${fl?.flatNo}*`,``,...allBills.map(b=>`${b.month}: ₹${((parseFloat(b.rentPaid)||0)+(b.waterStatus==='Paid'?parseFloat(b.waterAmount)||0:0)+(b.elecStatus==='Paid'?parseFloat(b.elecAmount)||0:0)).toLocaleString('en-IN')} (${b.rentStatus})`),`────────────────────`,`*Total Paid: ₹${total.toLocaleString('en-IN')}*`,``,society];
+  const ph=cleanPhone(ten.phone,cc);
+  if(win)win.location.href=`https://wa.me/${ph}?text=${encodeURIComponent(lines.join('\n'))}`;
+}
+
+// ═══════════════════════════════════════════
+// DUPLICATE PHONE CHECK
+// ═══════════════════════════════════════════
+async function checkDuplicatePhone(){
+  const phone=document.getElementById('tf-phone')?.value.trim();
+  const warnEl=document.getElementById('tf-phone-warn');
+  if(!warnEl||!phone||phone.length<8){if(warnEl)warnEl.innerHTML='';return}
+  const allTenants=await ga('tenants');
+  const dup=allTenants.find(t=>t.phone===phone&&t.id!==editId&&!t.movedOut);
+  if(dup){
+    const fl=(await ga('flats')).find(f=>f.id===dup.flatId);
+    warnEl.innerHTML=`<div style="background:var(--amber-lt);border-radius:7px;padding:6px 10px;font-size:11px;color:var(--amber);font-weight:700;margin-top:4px">⚠️ This number is already used by ${esc(dup.name)} in ${esc(fl?.block||'')}—${esc(fl?.flatNo||'')}</div>`;
+  } else {
+    warnEl.innerHTML='';
+  }
+}
+
+// ═══════════════════════════════════════════
+// BULK MARK-PAID
+// ═══════════════════════════════════════════
+async function openBulkPaid(){
+  const allFlats=await ga('flats');
+  const flats=filterByBuilding(allFlats);
+  const tenants=await ga('tenants');
+  const allBills=await ga('billing');
+  const mk=monthKey();
+  const mBills=allBills.filter(b=>b.month===mk);
+  const accts=(await getSetting('accounts','Cash,UPI / GPay,HDFC - Current A/c,SBI - Savings,Cheque')).split(',');
+
+  const unpaid=flats.filter(f=>f.status==='Occupied').filter(f=>{
+    const b=mBills.find(x=>x.flatId===f.id);
+    return !b||b.rentStatus!=='Paid';
+  });
+  if(!unpaid.length){toast('✅ All flats paid for '+monthLabel());return}
+
+  openModal(`✅ Bulk Mark Paid — ${monthLabel()}`,`
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">Select flats to mark as paid together</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-sm btn-ghost" onclick="document.querySelectorAll('.bulk-cb').forEach(c=>c.checked=true)">Select All</button>
+      <button class="btn btn-sm btn-ghost" onclick="document.querySelectorAll('.bulk-cb').forEach(c=>c.checked=false)">Clear</button>
+    </div>
+    <div style="max-height:220px;overflow-y:auto;margin-bottom:12px">
+      ${unpaid.map(f=>{const b=mBills.find(x=>x.flatId===f.id);const ten=tenants.find(t=>t.flatId===f.id);return`
+        <label style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--gray-50);border-radius:7px;margin-bottom:4px;cursor:pointer">
+          <input type="checkbox" class="bulk-cb" value="${f.id}" data-rent="${f.rent}" data-billid="${b?.id||''}" style="width:16px;height:16px;accent-color:var(--green)">
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:13px">${esc(f.block)}—${esc(f.flatNo)}</div>
+            <div style="font-size:11px;color:var(--gray-500)">${ten?esc(ten.name):'Vacant'} · ₹${(parseFloat(f.rent)||0).toLocaleString('en-IN')}/mo</div>
+          </div>
+          ${b?`<span class="badge bg-yellow" style="font-size:10px">${b.rentStatus}</span>`:`<span class="badge bg-gray" style="font-size:10px">No Entry</span>`}
+        </label>`}).join('')}
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Payment Date</label>
+        <input class="fc" id="bulk-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="fg"><label class="fl">Account</label>
+        <select class="fc" id="bulk-acct">${accts.map(a=>`<option>${esc(a.trim())}</option>`).join('')}</select></div>
+    </div>
+    <button class="btn btn-green btn-full" onclick="runBulkPaid()" style="margin-top:8px">✅ Mark Selected as Paid</button>
+  `);
+}
+
+async function runBulkPaid(){
+  const checked=[...document.querySelectorAll('.bulk-cb:checked')];
+  if(!checked.length){toast('⚠️ No flats selected');return}
+  const date=document.getElementById('bulk-date')?.value||new Date().toISOString().split('T')[0];
+  const acct=document.getElementById('bulk-acct')?.value||'Cash';
+  const mk=monthKey();
+  let count=0;
+  for(const cb of checked){
+    const flatId=parseInt(cb.value);
+    const rent=parseFloat(cb.dataset.rent)||0;
+    const billId=cb.dataset.billid?parseInt(cb.dataset.billid):null;
+    if(billId){
+      const existing=await g('billing',billId);
+      if(existing){await put('billing',{...existing,rentPaid:rent,rentStatus:'Paid',account:acct,paidDate:date,total:rent+(existing.waterStatus==='Paid'?parseFloat(existing.waterAmount)||0:0)+(existing.elecStatus==='Paid'?parseFloat(existing.elecAmount)||0:0)});auditLog('edit','billing',billId,{note:`Bulk mark paid — ₹${rent}`});}
+    } else {
+      const newId=await add('billing',{flatId,month:mk,rentDue:rent,rentPaid:rent,rentStatus:'Paid',waterUnits:0,waterRate:0.10,waterAmount:0,waterStatus:'Pending',elecUnits:0,elecAmount:0,elecStatus:'Pending',totalDue:rent,total:rent,account:acct,paidDate:date,notes:'',createdAt:new Date().toISOString()});
+      auditLog('create','billing',newId,{note:`Bulk mark paid — ₹${rent}`});
+    }
+    count++;
+  }
+  toast(`✅ ${count} flat${count!==1?'s':''} marked as paid`);
+  closeModal();renderBilling();renderDash();
+}
+
+// ═══════════════════════════════════════════
+// PARTIAL PAYMENT HISTORY
+// ═══════════════════════════════════════════
+async function viewPaymentHistory(billId){
+  const bill=await g('billing',billId);
+  const allPay=(await ga('payments')).filter(p=>p.billId===billId).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
+  const fl=await g('flats',bill?.flatId);
+  openModal(`💳 Payment History — ${bill?.month}`,`
+    <div style="font-size:13px;font-weight:700;color:var(--gray-600);margin-bottom:10px">${esc(fl?.block||'')}—${esc(fl?.flatNo||'')} · Rent Due: ₹${(parseFloat(bill?.rentDue)||0).toLocaleString('en-IN')}</div>
+    ${allPay.length===0?`<div style="text-align:center;padding:20px;color:var(--gray-400)">No partial payment records</div>`:''}
+    ${allPay.map((p,i)=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--gray-50);border-radius:7px;margin-bottom:6px">
+        <div>
+          <div style="font-size:12px;font-weight:700">${i===0?'Initial':'Instalment '+i} · ${esc(p.account||'—')}</div>
+          <div style="font-size:11px;color:var(--gray-500)">${p.date||''}</div>
+        </div>
+        <div style="font-size:14px;font-weight:800;color:var(--green)">+₹${(parseFloat(p.amount)||0).toLocaleString('en-IN')}</div>
+      </div>`).join('')}
+    <div style="display:flex;justify-content:space-between;padding:8px;background:var(--blue-lt);border-radius:7px;font-size:13px;font-weight:700;margin-top:4px">
+      <span>Total Paid</span>
+      <span style="color:var(--green)">₹${((parseFloat(bill?.rentPaid)||0)).toLocaleString('en-IN')}</span>
+    </div>
+  `);
+}
+
+// ═══════════════════════════════════════════
+// TENANT DOCUMENT STORAGE
+// ═══════════════════════════════════════════
+async function openDocuments(tenantId){
+  const ten=await g('tenants',tenantId);
+  const fl=await g('flats',ten?.flatId);
+  const docs=(await ga('documents')).filter(d=>d.tenantId===tenantId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+
+  openModal(`📁 Documents — ${esc(ten?.name||'')}`,`
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">${esc(fl?.block||'')}—${esc(fl?.flatNo||'')} · ${docs.length} document${docs.length!==1?'s':''}</div>
+    <label style="display:flex;align-items:center;gap:8px;background:var(--blue-lt);border-radius:9px;padding:10px 13px;margin-bottom:12px;cursor:pointer;font-size:13px;font-weight:700;color:var(--blue)">
+      📎 Upload Document (image/PDF)
+      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="uploadTenantDoc(${tenantId},this)">
+    </label>
+    <div id="docs-list">
+      ${docs.length===0?`<div class="empty" style="padding:16px"><div class="eico">📁</div><div class="etitle">No documents yet</div><div class="esub">Upload ID cards, agreements, photos</div></div>`:''}
+      ${docs.map(d=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--gray-50);border-radius:8px;margin-bottom:6px">
+          <div style="font-size:24px">${d.mimeType?.startsWith('image/')?'🖼️':'📄'}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.name)}</div>
+            <div style="font-size:11px;color:var(--gray-500)">${d.docType||'Document'} · ${d.createdAt?.split('T')[0]||''}</div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm btn-ghost" onclick="viewDoc(${d.id})">👁️</button>
+            <button class="btn btn-sm btn-ghost" onclick="downloadDoc(${d.id})">⬇️</button>
+            <button class="btn btn-sm btn-ghost" style="color:var(--red)" onclick="deleteDoc(${d.id},${tenantId})">🗑️</button>
+          </div>
+        </div>`).join('')}
+    </div>
+  `);
+}
+
+async function uploadTenantDoc(tenantId,input){
+  const file=input.files[0];if(!file)return;
+  input.value='';
+  if(file.size>5*1024*1024){toast('⚠️ File too large (max 5 MB)');return}
+  const docType=prompt('Document type (e.g. Aadhaar, PAN, Agreement, Photo):','Aadhaar')||'Document';
+  toast('⏳ Uploading…');
+  const reader=new FileReader();
+  reader.onload=async(e)=>{
+    const id=await add('documents',{tenantId,flatId:null,name:file.name,docType,mimeType:file.type,data:e.target.result,createdAt:new Date().toISOString()});
+    auditLog('create','document',id,{note:`Uploaded ${file.name} for tenant ${tenantId}`});
+    toast('✅ Document saved');
+    openDocuments(tenantId);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function viewDoc(docId){
+  const d=await g('documents',docId);
+  if(!d)return;
+  if(d.mimeType?.startsWith('image/')){
+    openModal(`👁️ ${esc(d.name)}`,`<img src="${d.data}" style="width:100%;border-radius:8px;max-height:60vh;object-fit:contain">`);
+  } else {
+    // Open PDF in new tab
+    const blob=dataURLtoBlob(d.data,d.mimeType);
+    const url=URL.createObjectURL(blob);
+    window.open(url,'_blank');
+  }
+}
+
+async function downloadDoc(docId){
+  const d=await g('documents',docId);if(!d)return;
+  const a=document.createElement('a');a.href=d.data;a.download=d.name;a.click();
+}
+
+async function deleteDoc(docId,tenantId){
+  showConfirm('Delete Document','Remove this document? This cannot be undone.',async()=>{
+    await del('documents',docId);
+    auditLog('delete','document',docId,{});
+    toast('🗑️ Document deleted');
+    openDocuments(tenantId);
+  },'Delete','🗑️');
+}
+
+function dataURLtoBlob(dataURL,mime){
+  const b=atob(dataURL.split(',')[1]);const arr=new Uint8Array(b.length);
+  for(let i=0;i<b.length;i++)arr[i]=b.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+
+// ═══════════════════════════════════════════
+// CHARTS: OCCUPANCY, TURNOVER, WATER TREND
+// ═══════════════════════════════════════════
+async function showOccupancyTrend(){
+  const allBills=await ga('billing');
+  const allFlats=await ga('flats');
+  const total=allFlats.length;
+  // Derive occupied count per month from billing records
+  const monthSet=[...new Set(allBills.map(b=>b.month))].sort().slice(-12);
+  const data=monthSet.map(m=>{
+    const occ=new Set(allBills.filter(b=>b.month===m).map(b=>b.flatId)).size;
+    return{m,occ,pct:total>0?Math.round(occ/total*100):0};
+  });
+  _showBarChart('Building Occupancy Trend',data.map(d=>d.m.slice(5)),data.map(d=>d.pct),'%','Occupancy %','var(--blue)');
+}
+
+async function showTurnoverChart(){
+  const moveouts=await ga('moveouts');
+  const monthSet=[...new Set(moveouts.map(m=>m.moveOutDate?.slice(0,7)).filter(Boolean))].sort().slice(-12);
+  const counts=monthSet.map(m=>moveouts.filter(x=>x.moveOutDate?.startsWith(m)).length);
+  _showBarChart('Tenant Turnover (Move-Outs per Month)',monthSet.map(m=>m.slice(5)),counts,'','Vacations','var(--red)');
+}
+
+async function showWaterTrend(flatId){
+  const fl=await g('flats',flatId);
+  const readings=(await gaIdx('waterReadings','flatId',flatId)).sort((a,b)=>a.month.localeCompare(b.month)).slice(-12);
+  if(!readings.length){toast('💧 No water readings for this flat');return}
+  _showBarChart(`💧 Water Consumption — ${esc(fl?.block||'')} ${esc(fl?.flatNo||'')}`,readings.map(r=>r.month.slice(5)),readings.map(r=>r.units),'units','Units','var(--teal)');
+}
+
+function _showBarChart(title,labels,values,unit,yLabel,color){
+  const max=Math.max(...values,1);
+  const bars=labels.map((l,i)=>{
+    const h=Math.round((values[i]/max)*100);
+    return`<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:28px">
+      <div style="font-size:10px;font-weight:700;color:${color};margin-bottom:2px">${values[i]}${unit}</div>
+      <div style="width:100%;background:${color};border-radius:4px 4px 0 0;height:${h}px;min-height:2px;transition:height .3s"></div>
+      <div style="font-size:9px;color:var(--gray-500);margin-top:3px;writing-mode:${labels.length>8?'vertical-lr':'horizontal-tb'};transform:${labels.length>8?'rotate(180deg)':'none'}">${l}</div>
+    </div>`;
+  }).join('');
+  openModal(title,`
+    <div style="font-size:11px;color:var(--gray-400);margin-bottom:12px">${yLabel} — last ${labels.length} months</div>
+    <div style="display:flex;align-items:flex-end;gap:3px;height:140px;padding-bottom:24px">${bars}</div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);margin-top:8px">
+      <span>Min: ${Math.min(...values)}${unit}</span>
+      <span>Avg: ${(values.reduce((a,b)=>a+b,0)/values.length).toFixed(1)}${unit}</span>
+      <span>Max: ${max}${unit}</span>
+    </div>
+  `);
+}
+
+// ═══════════════════════════════════════════
+// AUTO BILLING GENERATION
+// ═══════════════════════════════════════════
+async function autoAddCurrentMonth(){
+  const mk = monthKey(); // current YYYY-MM
+  const lastGenerated = await getSetting('lastAutoGenMonth','');
+  if(lastGenerated === mk) return; // already ran this month
+
+  const allFlats = await ga('flats');
+  const occ = allFlats.filter(f=>f.status==='Occupied');
+  if(occ.length === 0) return; // no occupied flats yet, nothing to do
+
+  const bills = await ga('billing');
+  const existing = new Set(bills.filter(b=>b.month===mk).map(b=>b.flatId));
+  const toAdd = occ.filter(f=>!existing.has(f.id));
+  if(toAdd.length === 0){
+    // All entries exist — record this month as done and return
+    await setSetting('lastAutoGenMonth', mk);
+    return;
+  }
+
+  for(const fl of toAdd){
+    await add('billing',{
+      flatId:fl.id, month:mk,
+      rentDue:parseFloat(fl.rent)||0, rentPaid:0, rentStatus:'Pending',
+      waterUnits:0, waterRate:0.10, waterAmount:0, waterStatus:'Pending',
+      elecUnits:0, elecAmount:0, elecStatus:'Pending',
+      totalDue:parseFloat(fl.rent)||0, total:0,
+      account:'', paidDate:'', notes:'', createdAt:new Date().toISOString()
+    });
+  }
+  await setSetting('lastAutoGenMonth', mk);
+  toast(`📅 ${toAdd.length} billing entr${toAdd.length===1?'y':'ies'} auto-created for ${MONTHS[parseInt(mk.split('-')[1])-1]} ${mk.split('-')[0]}`);
+  renderDash();
+}
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 async function init(){
@@ -5159,6 +5853,8 @@ async function init(){
     const openCount=maint.filter(m=>m.status==='Open'||m.status==='In Progress').length;
     const sub=document.getElementById('maint-badge-sub');
     if(sub&&openCount>0) sub.textContent=`${openCount} open request${openCount!==1?'s':''}`;
+    // Auto-generate billing entries for the current month
+    autoAddCurrentMonth();
   },1500);
 }
 init();
