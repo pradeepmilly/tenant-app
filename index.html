@@ -1899,7 +1899,8 @@ async function doOverdueWA(){
     const ten=tenants.find(t=>t.flatId===b.flatId);
     if(!ten?.phone){noPh.push(`${fl?.block}-${fl?.flatNo||'?'}`);continue}
     const ph=cleanPhone(ten.phone,cc);
-    const msg=`Dear ${ten.name},\n\nThis is a payment reminder from ${society}.\n────────────────────\nFlat    : *${fl?fl.block+' — '+fl.flatNo:''}*\nMonth  : *${b.month}*\nStatus : *${b.rentStatus}*\nDue    : *₹${b.total.toLocaleString('en-IN')}*\n────────────────────\nPlease pay at the earliest.\n\nThank you,\n${society}`;
+    const amtDue=(parseFloat(b.rentDue)||0)-(parseFloat(b.rentPaid)||0);
+    const msg=`Dear ${ten.name},\n\nThis is a payment reminder from ${society}.\n────────────────────\nFlat    : *${fl?fl.block+' — '+fl.flatNo:''}*\nMonth  : *${b.month}*\nStatus : *${b.rentStatus}*\nDue    : *₹${amtDue.toLocaleString('en-IN')}*\n────────────────────\nPlease pay at the earliest.\n\nThank you,\n${society}`;
     queue.push({name:ten.name,flat:fl?fl.block+' — '+fl.flatNo:'',phone:ten.phone,month:b.month,status:b.rentStatus,url:`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`});
   }
   openWAQueue(queue,noPh,'💬 Overdue Rent Alerts');
