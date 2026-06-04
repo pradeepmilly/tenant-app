@@ -1644,6 +1644,14 @@ function calcTotal(){
 
     // Visual cue: green when fully settled
     if(colEl) colEl.style.color = totalCollected >= totalDue ? 'var(--green)' : 'var(--amber)';
+
+    // Auto-update the Rent Status dropdown to give live feedback
+    const rstEl = document.getElementById('bf-rst');
+    if(rstEl){
+      if(rentDue > 0 && rentPaid >= rentDue) rstEl.value = 'Paid';
+      else if(rentPaid > 0 && rentPaid < rentDue) rstEl.value = 'Partial';
+      else if(rentPaid === 0) rstEl.value = 'Pending';
+    }
   }catch(e){}
 }
 
@@ -1761,11 +1769,17 @@ async function saveBill(){
   const _totalDue  = _rentDue + _waterAmt + _elecAmt;
   const _total     = _rentPaid + (_wPaid ? _waterAmt : 0) + (_ePaid ? _elecAmt : 0);
 
+  // Auto-derive rentStatus from amounts — user shouldn't need to change a dropdown manually
+  let _rentStatus = document.getElementById('bf-rst').value || 'Pending';
+  if(_rentDue > 0 && _rentPaid >= _rentDue) _rentStatus = 'Paid';
+  else if(_rentPaid > 0 && _rentPaid < _rentDue) _rentStatus = 'Partial';
+  else if(_rentPaid === 0 && _rentStatus === 'Paid') _rentStatus = 'Pending'; // guard against stale dropdown
+
   const data={flatId,month,
     account:document.getElementById('bf-acct').value,
     rentDue:_rentDue,
     rentPaid:_rentPaid,
-    rentStatus:document.getElementById('bf-rst').value,
+    rentStatus:_rentStatus,
     paidDate:document.getElementById('bf-date').value,
     waterUnits:parseFloat(document.getElementById('bf-wu').value)||0,
     waterRate:parseFloat(document.getElementById('bf-wr').value)||0.10,
