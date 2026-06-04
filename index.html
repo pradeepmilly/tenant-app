@@ -1383,7 +1383,7 @@ async function renderBilling(){
   const filteredFlats=occFlats.filter(fl=>{
     const bill=mBills.find(b=>b.flatId===fl.id);
     if(billFilter==='All')          return true;
-    if(billFilter==='Paid')         return bill?.rentStatus==='Paid';
+    if(billFilter==='Paid')         return bill&&bill.rentStatus==='Paid'&&(!bill.waterAmount||bill.waterStatus==='Paid');
     if(billFilter==='Pending')      return bill?.rentStatus==='Pending';
     if(billFilter==='Overdue')      return bill?.rentStatus==='Overdue';
     if(billFilter==='NoEntry')      return !bill;
@@ -1409,9 +1409,16 @@ async function renderBilling(){
   document.getElementById('bill-list').innerHTML=filteredFlats.map(fl=>{
     const bill=mBills.find(b=>b.flatId===fl.id);
     const ten=tenants.find(t=>t.flatId===fl.id);
-    const isPaid=bill?.rentStatus==='Paid';
+    // Paid = rent paid AND water paid (or no water bill). Electricity is optional —
+    // tenants sometimes pay it directly to the board so we track it but don't gate the status on it.
+    const rentPaid=bill?.rentStatus==='Paid';
+    const waterOk=!bill?.waterAmount||bill?.waterStatus==='Paid';
+    const isPaid=rentPaid&&waterOk;
     const lateFee=lateFeeMap[fl.id]||0;
-    const stBadge=bill?`<span class="badge ${isPaid?'bg-green':bill.rentStatus==='Overdue'?'bg-red':'bg-yellow'}">${bill.rentStatus}</span>`:
+    // Derive a display label: if rent+water paid but elec pending, show "Paid" with elec note
+    const elecPending=bill?.elecAmount&&bill?.elecStatus!=='Paid';
+    const statusLabel=isPaid?(elecPending?'Paid*':'Paid'):bill?.rentStatus||'No Entry';
+    const stBadge=bill?`<span class="badge ${isPaid?'bg-green':bill.rentStatus==='Overdue'?'bg-red':'bg-yellow'}" title="${isPaid&&elecPending?'Electricity bill pending payment to board':''}">${statusLabel}</span>`:
       `<span class="badge bg-gray">No Entry</span>`;
     return`<div class="card">
       <div class="bill-row">
@@ -2577,7 +2584,7 @@ async function exportExcel(){
   }}));
   XLSX.utils.book_append_sheet(wb,ws2,'Tenant_DB');
 
-  const ws3=XLSX.utils.json_to_sheet(bills.map(b=>{const fl=allFlats.find(f=>f.id===b.flatId);const ten=allTenants.find(t=>t.flatId===b.flatId);return{'Month':b.month,'Block':fl?.block||'','Flat':fl?.flatNo||'','Tenant':ten?.name||'','Rent Due':b.rentDue,'Rent Paid':b.rentPaid,'Rent Status':b.rentStatus,'Water Units':b.waterUnits,'Water Rate':b.waterRate,'Water Amt':b.waterAmount,'Elec Units':b.elecUnits,'Elec Amt':b.elecAmount,'Elec Status':b.elecStatus,'Total':b.total,'Account':b.account||'','Date':b.paidDate||'','Notes':b.notes||''}}));
+  const ws3=XLSX.utils.json_to_sheet(bills.map(b=>{const fl=allFlats.find(f=>f.id===b.flatId);const ten=allTenants.find(t=>t.flatId===b.flatId);return{'Month':b.month,'Block':fl?.block||'','Flat':fl?.flatNo||'','Tenant':ten?.name||'','Rent Due':b.rentDue,'Rent Paid':b.rentPaid,'Rent Status':b.rentStatus,'Water Units':b.waterUnits,'Water Rate':b.waterRate,'Water Amt':b.waterAmount,'Water Status':b.waterStatus||'Pending','Elec Units':b.elecUnits,'Elec Amt':b.elecAmount,'Elec Status':b.elecStatus||'Pending','Total Due':b.totalDue||0,'Total':b.total,'Account':b.account||'','Date':b.paidDate||'','Notes':b.notes||''}}));
   XLSX.utils.book_append_sheet(wb,ws3,'Billing');
 
   // Expenses sheet
@@ -5322,13 +5329,21 @@ async function openNotificationSettings(){
 // ═══════════════════════════════════════════
 async function openDriveBackupSettings(){
   openModal('☁️ Google Drive Backup',`
-    <div style="background:var(--green-lt);border-radius:9px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--green);font-weight:700">
-      ✅ Google Drive is connected
+    <div style="background:var(--amber-lt);border-radius:9px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--amber);font-weight:700">
+      ⚠️ Direct Drive sync is not available in this version
     </div>
-    <div style="font-size:13px;color:var(--gray-600);margin-bottom:14px">
-      Back up your TMS Excel file directly to Google Drive. The file includes all flats, tenants, billing, water readings, expenses and settings.
+    <div style="font-size:13px;color:var(--gray-600);margin-bottom:14px;line-height:1.7">
+      This app runs entirely in your browser and cannot connect to Google Drive directly without an internet server and Google OAuth setup.
+      <br><br>
+      <b>Best way to back up to Google Drive:</b>
     </div>
-    <button class="btn btn-primary btn-full" onclick="backupToDrive()" style="margin-bottom:9px">☁️ Backup to Drive Now</button>
+    <div style="background:var(--gray-50);border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--gray-700);line-height:2">
+      <div>1️⃣ Click <b>Export Excel</b> below to download your data</div>
+      <div>2️⃣ Open <b>drive.google.com</b> and upload the file</div>
+      <div>3️⃣ Or save it directly into your <b>Google Drive desktop folder</b> if you have Drive for Desktop installed</div>
+    </div>
+    <button class="btn btn-primary btn-full" onclick="exportExcel();markBackupDone()" style="margin-bottom:9px">📊 Export Excel Now</button>
+    <button class="btn btn-teal btn-full" onclick="window.open('https://drive.google.com','_blank')" style="margin-bottom:9px">🌐 Open Google Drive</button>
     <button class="btn btn-ghost btn-full" onclick="closeModal();openBackupSettings()">⚙️ Backup Schedule Settings</button>
   `);
 }
