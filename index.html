@@ -407,9 +407,12 @@ textarea.fc{resize:vertical;min-height:72px}
       <div class="mcard" onclick="openDriveBackupSettings()"><div class="mico">☁️</div><div class="mtxt">Drive Backup</div><div class="msub">Google Drive sync</div></div>
       <div class="mcard" onclick="exportExcel()"><div class="mico">📊</div><div class="mtxt">Export Excel</div><div class="msub">Download all data</div></div>
       <div class="mcard" onclick="document.getElementById('import-file').click()"><div class="mico">📥</div><div class="mtxt">Import Excel</div><div class="msub">Flats, tenants, billing</div></div>
+      <div class="mcard" onclick="exportDocuments()"><div class="mico">📁</div><div class="mtxt">Export Documents</div><div class="msub">Tenant ID cards & files</div></div>
+      <div class="mcard" onclick="document.getElementById('import-docs-file').click()"><div class="mico">📂</div><div class="mtxt">Import Documents</div><div class="msub">Restore from backup</div></div>
       <div class="mcard" onclick="showImportGuide()"><div class="mico">📋</div><div class="mtxt">Import Guide</div><div class="msub">Column format & template</div></div>
     </div>
     <input type="file" id="import-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImportFile(this)">
+    <input type="file" id="import-docs-file" accept=".json" style="display:none" onchange="importDocuments(this)">
   </div>
 </div>
 
@@ -4105,6 +4108,10 @@ async function openBackupSettings(){
         <button class="btn btn-primary btn-full" onclick="exportExcel();markBackupDone()">📊 Export Excel</button>
         <button class="btn btn-ghost btn-full" onclick="exportSettings()">⚙️ Export Settings</button>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px">
+        <button class="btn btn-ghost btn-full" style="color:var(--blue)" onclick="exportDocuments()">📁 Export Docs</button>
+        <button class="btn btn-ghost btn-full" style="color:var(--blue)" onclick="closeModal();document.getElementById('import-docs-file').click()">📂 Import Docs</button>
+      </div>
       <button class="btn btn-ghost btn-full" style="margin-top:9px;color:var(--purple)" onclick="closeModal();document.getElementById('import-file').click()">📥 Restore from Backup</button>
     </div>
 
@@ -5676,7 +5683,10 @@ async function openDocuments(tenantId){
   const docs=(await ga('documents')).filter(d=>d.tenantId===tenantId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
 
   openModal(`📁 Documents — ${esc(ten?.name||'')}`,`
-    <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">${esc(fl?.block||'')}—${esc(fl?.flatNo||'')} · ${docs.length} document${docs.length!==1?'s':''}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--gray-500)">${esc(fl?.block||'')}—${esc(fl?.flatNo||'')} · ${docs.length} document${docs.length!==1?'s':''}</div>
+      ${docs.length>0?`<button class="btn btn-sm btn-ghost" style="color:var(--blue)" onclick="exportDocuments(${tenantId})">📤 Export</button>`:''}
+    </div>
     <label style="display:flex;align-items:center;gap:8px;background:var(--blue-lt);border-radius:9px;padding:10px 13px;margin-bottom:12px;cursor:pointer;font-size:13px;font-weight:700;color:var(--blue)">
       📎 Upload Document (image/PDF)
       <input type="file" accept="image/*,application/pdf" style="display:none" onchange="uploadTenantDoc(${tenantId},this)">
@@ -5747,6 +5757,90 @@ function dataURLtoBlob(dataURL,mime){
   const b=atob(dataURL.split(',')[1]);const arr=new Uint8Array(b.length);
   for(let i=0;i<b.length;i++)arr[i]=b.charCodeAt(i);
   return new Blob([arr],{type:mime});
+}
+
+// Export documents as JSON — includes full base64 file data.
+// Pass a tenantId to export only that tenant's docs; omit for all docs.
+async function exportDocuments(tenantId){
+  toast('⏳ Preparing document export…');
+  const allDocs=await ga('documents');
+  const docs=tenantId?allDocs.filter(d=>d.tenantId===tenantId):allDocs;
+  if(!docs.length){toast('📁 No documents to export');return}
+
+  // Attach tenant/flat names for readability
+  const allTenants=await ga('tenants');
+  const allFlats=await ga('flats');
+  const enriched=docs.map(d=>{
+    const ten=allTenants.find(t=>t.id===d.tenantId);
+    const fl=ten?allFlats.find(f=>f.id===ten.flatId):null;
+    return{...d,_tenantName:ten?.name||'',_block:fl?.block||'',_flatNo:fl?.flatNo||''};
+  });
+
+  const payload={
+    _version:'TMS-Documents-v1',
+    _exported:new Date().toISOString(),
+    _count:enriched.length,
+    documents:enriched
+  };
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  const suffix=tenantId?`_tenant${tenantId}`:'_all';
+  a.download=`TMS_Documents${suffix}_${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  toast(`✅ ${enriched.length} document${enriched.length!==1?'s':''} exported`);
+}
+
+async function importDocuments(input){
+  const file=input.files[0];if(!file)return;
+  input.value='';
+  toast('⏳ Reading documents…');
+  try{
+    const text=await file.text();
+    const payload=JSON.parse(text);
+    if(!payload._version||!payload._version.startsWith('TMS-Documents')){
+      toast('❌ Not a valid TMS documents backup file');return;
+    }
+    const incoming=payload.documents||[];
+    if(!incoming.length){toast('📁 No documents found in file');return}
+
+    const existing=await ga('documents');
+    const allTenants=await ga('tenants');
+    const allFlats=await ga('flats');
+    let added=0,skipped=0,unmatched=0;
+
+    for(const d of incoming){
+      // Try to match tenant by name + flat if tenantId changed across devices
+      let targetTenantId=null;
+      const localTen=allTenants.find(t=>t.id===d.tenantId);
+      if(localTen){
+        targetTenantId=localTen.id;
+      } else if(d._tenantName){
+        // Fallback: match by tenant name + block + flat
+        const matched=allTenants.find(t=>{
+          const fl=allFlats.find(f=>f.id===t.flatId);
+          return t.name===d._tenantName&&fl?.block===d._block&&fl?.flatNo===d._flatNo;
+        });
+        if(matched) targetTenantId=matched.id;
+      }
+      if(!targetTenantId){unmatched++;continue;}
+
+      // Skip if same tenant already has a doc with same name and type
+      const dup=existing.find(e=>e.tenantId===targetTenantId&&e.name===d.name&&e.docType===d.docType);
+      if(dup){skipped++;continue;}
+
+      const {id:_id,_tenantName:_a,_block:_b,_flatNo:_c,...clean}=d;
+      await add('documents',{...clean,tenantId:targetTenantId,createdAt:d.createdAt||new Date().toISOString()});
+      added++;
+    }
+
+    let msg=`✅ ${added} document${added!==1?'s':''} imported`;
+    if(skipped) msg+=` · ${skipped} skipped (already exist)`;
+    if(unmatched) msg+=` · ${unmatched} skipped (tenant not found)`;
+    toast(msg);
+  }catch(err){
+    toast('❌ Import failed: '+err.message);
+  }
 }
 
 // ═══════════════════════════════════════════
