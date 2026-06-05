@@ -2805,8 +2805,8 @@ async function runImport(wb){
         remarks:String(row['Remarks']||''),
         createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()
       });
-      // Auto-mark flat occupied
-      if(fl.status!=='Occupied') await put('flats',{...fl,status:'Occupied',updatedAt:new Date().toISOString()});
+      // Auto-mark flat occupied — but never override an explicitly Vacant status from Building_DB
+      if(fl.status!=='Occupied' && fl.status!=='Vacant') await put('flats',{...fl,status:'Occupied',updatedAt:new Date().toISOString()});
       tenantCount++;
     }
   }
@@ -2948,6 +2948,19 @@ async function runImport(wb){
         createdAt:String(row['Recorded On']||new Date().toISOString())
       });
       moveoutCount++;
+    }
+    // Reconcile: ensure flats referenced in vacated-tenant records are marked Vacant
+    if(moveoutCount>0){
+      const allFlatsNow2=await ga('flats');
+      const allMoveoutsNow=await ga('moveouts');
+      for(const mo of allMoveoutsNow){
+        const fl=allFlatsNow2.find(f=>f.block===mo.block&&f.flatNo===mo.flatNo);
+        if(fl&&fl.status==='Occupied'){
+          // Only mark Vacant if there's no active (non-moved-out) tenant still linked to this flat
+          const activeTenants=(await ga('tenants')).filter(t=>t.flatId===fl.id&&!t.movedOut);
+          if(activeTenants.length===0) await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
+        }
+      }
     }
   }
 
@@ -5961,6 +5974,26 @@ async function autoAddCurrentMonth(){
 
 // ═══════════════════════════════════════════
 // INIT
+// ─── Startup reconciliation: fix flats stuck as Occupied after vacate ──────
+async function reconcileMoveoutStatuses(){
+  const moveouts = await ga('moveouts');
+  if(!moveouts.length) return;
+  const allFlats   = await ga('flats');
+  const allTenants = await ga('tenants');
+  let fixed=0;
+  for(const mo of moveouts){
+    const fl=allFlats.find(f=>f.block===mo.block&&f.flatNo===mo.flatNo);
+    if(!fl||fl.status==='Vacant') continue;
+    // Check no active (non-moved-out) tenant is linked to this flat
+    const active=allTenants.filter(t=>t.flatId===fl.id&&!t.movedOut);
+    if(active.length===0){
+      await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
+      fixed++;
+    }
+  }
+  if(fixed>0){renderFlats();renderDash();}
+}
+
 // ═══════════════════════════════════════════
 async function init(){
   applyDarkMode();        // apply dark mode before anything renders
@@ -5969,6 +6002,8 @@ async function init(){
   updateBuildingBar();
   renderDash();
   setTimeout(async()=>{
+    // Reconcile flat statuses: if a flat has a moveout record but no active tenant, mark it Vacant
+    reconcileMoveoutStatuses();
     checkBackupReminder();
     scheduleNotifications();  // send any due notifications
     // Update maintenance badge
