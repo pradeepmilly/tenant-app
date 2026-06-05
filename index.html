@@ -5776,16 +5776,31 @@ async function viewDoc(docId){
   if(d.mimeType?.startsWith('image/')){
     openModal(`👁️ ${esc(d.name)}`,`<img src="${d.data}" style="width:100%;border-radius:8px;max-height:60vh;object-fit:contain">`);
   } else {
-    // Open PDF in new tab
-    const blob=dataURLtoBlob(d.data,d.mimeType);
-    const url=URL.createObjectURL(blob);
-    window.open(url,'_blank');
+    // Show PDF inline — avoids iOS Safari popup blocker (window.open from async is blocked)
+    openModal(`📄 ${esc(d.name)}`,`
+      <div style="height:65vh;border-radius:8px;overflow:hidden;background:#f3f4f6">
+        <iframe src="${d.data}" style="width:100%;height:100%;border:none" title="${esc(d.name)}"></iframe>
+      </div>
+      <a href="${d.data}" target="_blank" download="${esc(d.name)}"
+         style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;padding:10px;background:var(--blue-lt);border-radius:9px;color:var(--blue);font-size:13px;font-weight:700;text-decoration:none">
+        📥 Download / Open in Browser
+      </a>`);
   }
 }
 
 async function downloadDoc(docId){
   const d=await g('documents',docId);if(!d)return;
-  const a=document.createElement('a');a.href=d.data;a.download=d.name;a.click();
+  // Try Web Share API first — works on iOS (share sheet → Save to Files)
+  if(navigator.canShare){
+    try{
+      const blob=dataURLtoBlob(d.data,d.mimeType);
+      const file=new File([blob],d.name,{type:d.mimeType});
+      if(navigator.canShare({files:[file]})){await navigator.share({files:[file],title:d.name});return;}
+    }catch(e){/* fall through */}
+  }
+  // Desktop fallback
+  const a=document.createElement('a');a.href=d.data;a.download=d.name;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 
 async function deleteDoc(docId,tenantId){
