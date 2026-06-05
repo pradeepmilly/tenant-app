@@ -2624,7 +2624,6 @@ async function exportExcel(){
   XLSX.utils.book_append_sheet(wb,ws4,'Settings');
 
   // Vacated Tenants sheet
-  const allMoveouts=await ga('moveouts');
   allMoveouts.sort((a,b)=>(b.moveOutDate||b.createdAt).localeCompare(a.moveOutDate||a.createdAt));
   const moRows=allMoveouts.map(m=>({
     'Block':m.block||'','Flat No':m.flatNo||'','Tenant Name':m.tenantName||'',
