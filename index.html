@@ -2572,7 +2572,10 @@ async function exportExcel(){
   // Export scoped to building if active
   const flats=filterByBuilding(allFlats);
   const allTenants=await ga('tenants');
-  const tenants=allTenants.filter(t=>flatIds.has(t.flatId));
+  const allMoveouts=await ga('moveouts');
+  // Exclude vacated tenants from Tenant_DB export (they're already in Vacated_Tenants sheet)
+  const tenants=allTenants.filter(t=>flatIds.has(t.flatId)&&!t.movedOut&&
+    !allMoveouts.find(m=>m.tenantName===t.name&&allFlats.find(f=>f.id===t.flatId&&f.block===m.block&&f.flatNo===m.flatNo)));
   const allBills=await ga('billing');
   const bills=allBills.filter(b=>flatIds.has(b.flatId));
 
@@ -5984,9 +5987,15 @@ async function reconcileMoveoutStatuses(){
   for(const mo of moveouts){
     const fl=allFlats.find(f=>f.block===mo.block&&f.flatNo===mo.flatNo);
     if(!fl||fl.status==='Vacant') continue;
-    // Check no active (non-moved-out) tenant is linked to this flat
-    const active=allTenants.filter(t=>t.flatId===fl.id&&!t.movedOut);
-    if(active.length===0){
+    // All moveout records for this flat
+    const flatMoveouts=moveouts.filter(m=>m.block===fl.block&&m.flatNo===fl.flatNo);
+    // A tenant is "active" if: not explicitly movedOut AND their name isn't in any moveout record for this flat
+    const linked=allTenants.filter(t=>t.flatId===fl.id);
+    const hasActive=linked.some(t=>{
+      if(t.movedOut) return false;
+      return !flatMoveouts.find(m=>m.tenantName===t.name);
+    });
+    if(!hasActive){
       await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
       fixed++;
     }
