@@ -4558,7 +4558,10 @@ async function loadMoveOutDetails(flatId){
   // 4. Painting & cleaning = 1 month rent (fixed)
   const paintingCharges = monthlyRent;
 
-  const autoDeduct = pendingRent + waterDues + elecDues + paintingCharges;
+  // 5. Current month rent (advance deduction on move-out)
+  const currentMonthRent = monthlyRent;
+
+  const autoDeduct = pendingRent + waterDues + elecDues + paintingCharges + currentMonthRent;
   const refund     = Math.max(0, deposit - autoDeduct);
 
   const el=document.getElementById('mo-details');
@@ -4582,10 +4585,11 @@ async function loadMoveOutDetails(flatId){
 
     <div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Deductions</div>
     <div style="background:white;border:1.5px solid var(--gray-200);border-radius:9px;padding:8px 12px;margin-bottom:12px">
+      ${deductRow('🏠 Current Month Rent', currentMonthRent, true, 'mo-current-rent')}
       ${deductRow('🎨 Painting & Cleaning (1 month rent)', paintingCharges, true, 'mo-painting')}
       ${pendingRent>0  ? deductRow(`💰 Pending Rent (${pendingBills.length} month${pendingBills.length!==1?'s':''})`, pendingRent, true, 'mo-rent-due')  : ''}
-      ${waterDues>0    ? deductRow('💧 Unpaid Water Bills', waterDues, true, 'mo-water-due')  : ''}
-      ${elecDues>0     ? deductRow('⚡ Unpaid Electricity Bills', elecDues, true, 'mo-elec-due') : ''}
+      ${deductRow('💧 Water Bill Pending', waterDues, true, 'mo-water-due')}
+      ${deductRow('⚡ Electricity Bill Pending', elecDues, true, 'mo-elec-due')}
       ${deductRow('🔧 Other Deductions (damage etc.)', 0, true, 'mo-other')}
       <div style="display:flex;justify-content:space-between;padding:8px 0 2px;font-size:13px;font-weight:900;color:var(--red);margin-top:4px;border-top:2px solid var(--gray-200)">
         <span>Total Deductions</span><span id="mo-total-ded">₹${autoDeduct.toLocaleString('en-IN')}</span>
@@ -4613,7 +4617,7 @@ async function loadMoveOutDetails(flatId){
 
 function recalcMoRefund(depositOverride){
   const deposit = depositOverride || parseFloat(document.querySelector('#mo-details .scard')?.textContent?.replace(/[^0-9]/g,''))||0;
-  const fields  = ['mo-painting','mo-rent-due','mo-water-due','mo-elec-due','mo-other'];
+  const fields  = ['mo-current-rent','mo-painting','mo-rent-due','mo-water-due','mo-elec-due','mo-other'];
   const totalDed= fields.reduce((s,id)=>s+(parseFloat(document.getElementById(id)?.value)||0),0);
   const refund  = Math.max(0, (parseFloat(document.querySelector('[style*="color:var(--green)"]')?.textContent?.replace(/[^0-9]/g,''))||0) - totalDed);
 
@@ -4633,17 +4637,19 @@ function recalcMoRefund(depositOverride){
 function calcMoRefund(deposit){ recalcMoRefund(deposit); } // legacy alias
 
 async function processMoveOut(flatId,deposit){
+  const currentMonthRent = parseFloat(document.getElementById('mo-current-rent')?.value)||0;
   const painting  = parseFloat(document.getElementById('mo-painting')?.value)||0;
   const rentDue   = parseFloat(document.getElementById('mo-rent-due')?.value)||0;
   const waterDue  = parseFloat(document.getElementById('mo-water-due')?.value)||0;
   const elecDue   = parseFloat(document.getElementById('mo-elec-due')?.value)||0;
   const other     = parseFloat(document.getElementById('mo-other')?.value)||0;
-  const ded       = painting + rentDue + waterDue + elecDue + other;
+  const ded       = currentMonthRent + painting + rentDue + waterDue + elecDue + other;
   const reasonParts = [
+    currentMonthRent>0 ? `Current Month Rent ₹${currentMonthRent.toLocaleString('en-IN')}` : '',
     painting>0 ? `Painting & Cleaning ₹${painting.toLocaleString('en-IN')}` : '',
     rentDue>0  ? `Pending Rent ₹${rentDue.toLocaleString('en-IN')}`         : '',
-    waterDue>0 ? `Water Dues ₹${waterDue.toLocaleString('en-IN')}`          : '',
-    elecDue>0  ? `Elec Dues ₹${elecDue.toLocaleString('en-IN')}`            : '',
+    waterDue>0 ? `Water Bill ₹${waterDue.toLocaleString('en-IN')}`          : '',
+    elecDue>0  ? `Electricity Bill ₹${elecDue.toLocaleString('en-IN')}`     : '',
     other>0    ? `Other ₹${other.toLocaleString('en-IN')}`                  : '',
   ].filter(Boolean);
   const reason = reasonParts.join(' + ');
@@ -4667,7 +4673,7 @@ async function processMoveOut(flatId,deposit){
         tenantRemarks:ten?.remarks||'',
         flatNo:fl.flatNo,block:fl.block,
         deposit,deductions:ded,deductionReason:reason,refund,moveOutDate:date,notes,
-        painting,rentDue,waterDue,elecDue,other,createdAt:new Date().toISOString()};
+        currentMonthRent,painting,rentDue,waterDue,elecDue,other,createdAt:new Date().toISOString()};
       const moId = await add('moveouts',moRecord);
       if(ten){await put('tenants',{...ten,movedOut:true,moveOutDate:date,updatedAt:new Date().toISOString()});}
       toast('✅ Move-out processed');
@@ -4726,10 +4732,11 @@ async function _showMoveOutReportAsync(m){
     </div>
     <div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Deductions</div>
     <div style="margin-bottom:10px">
+      ${dRow('🏠 Current Month Rent', m.currentMonthRent||0)}
       ${dRow('🎨 Painting & Cleaning', m.painting||0)}
       ${dRow('💰 Pending Rent Dues', m.rentDue||0)}
-      ${dRow('💧 Unpaid Water Bills', m.waterDue||0)}
-      ${dRow('⚡ Unpaid Electricity Bills', m.elecDue||0)}
+      ${dRow('💧 Water Bill Pending', m.waterDue||0)}
+      ${dRow('⚡ Electricity Bill Pending', m.elecDue||0)}
       ${dRow('🔧 Other Deductions', m.other||0)}
       <div style="display:flex;justify-content:space-between;padding:7px 0;font-size:13px;font-weight:800;color:var(--red);border-top:2px solid var(--gray-200);margin-top:4px">
         <span>Total Deductions</span><span>−₹${(m.deductions||0).toLocaleString('en-IN')}</span>
@@ -4798,11 +4805,12 @@ async function sendMoveOutWA(m){
     `Move-Out Date : *${m.moveOutDate||'—'}*`,``,
     `Security Deposit : ₹${(m.deposit||0).toLocaleString('en-IN')}`,
   ];
+  if(m.currentMonthRent>0) lines.push(`🏠 Current Month Rent  : −₹${m.currentMonthRent.toLocaleString('en-IN')}`);
   if(m.painting>0)  lines.push(`🎨 Painting & Cleaning : −₹${m.painting.toLocaleString('en-IN')}`);
-  if(m.rentDue>0)   lines.push(`💰 Pending Rent Dues  : −₹${m.rentDue.toLocaleString('en-IN')}`);
-  if(m.waterDue>0)  lines.push(`💧 Water Dues          : −₹${m.waterDue.toLocaleString('en-IN')}`);
-  if(m.elecDue>0)   lines.push(`⚡ Electricity Dues    : −₹${m.elecDue.toLocaleString('en-IN')}`);
-  if(m.other>0)     lines.push(`🔧 Other Deductions   : −₹${m.other.toLocaleString('en-IN')}`);
+  if(m.rentDue>0)   lines.push(`💰 Pending Rent Dues   : −₹${m.rentDue.toLocaleString('en-IN')}`);
+  if(m.waterDue>0)  lines.push(`💧 Water Bill Pending  : −₹${m.waterDue.toLocaleString('en-IN')}`);
+  if(m.elecDue>0)   lines.push(`⚡ Electricity Pending  : −₹${m.elecDue.toLocaleString('en-IN')}`);
+  if(m.other>0)     lines.push(`🔧 Other Deductions    : −₹${m.other.toLocaleString('en-IN')}`);
   lines.push(
     `────────────────────`,
     `*${(m.refund||0)>0?'Refund to You':'No Refund'} : ₹${(m.refund||0).toLocaleString('en-IN')}*`,
@@ -4900,10 +4908,11 @@ async function exportMoveOutExcel(){
     'Security Deposit':m.deposit||0,
     'Deductions':m.deductions||0,
     'Deduction Reason':m.deductionReason||'',
+    'Current Month Rent':m.currentMonthRent||0,
     'Painting':m.painting||0,
     'Rent Due':m.rentDue||0,
-    'Water Due':m.waterDue||0,
-    'Elec Due':m.elecDue||0,
+    'Water Bill Pending':m.waterDue||0,
+    'Electricity Bill Pending':m.elecDue||0,
     'Other Deductions':m.other||0,
     'Refund':m.refund||0,
     'Notes':m.notes||'',
