@@ -1072,8 +1072,8 @@ async function renderTenants(query=''){
   const allFlats=await ga('flats');
   const flatIds=buildingFlatIds(allFlats); // building scope
 
-  // Filter tenants by building scope
-  let tenants=allTenants.filter(t=>flatIds.has(t.flatId));
+  // Filter tenants by building scope; moved-out tenants live in Vacated Tenants history, not here
+  let tenants=allTenants.filter(t=>flatIds.has(t.flatId)&&!t.movedOut);
   if(q) tenants=tenants.filter(t=>`${t.name} ${t.phone} ${t.email}`.toLowerCase().includes(q.toLowerCase()));
 
   const el=document.getElementById('tenants-list');
@@ -1115,8 +1115,11 @@ async function renderTenants(query=''){
 async function openTenantForm(data){
   const f=data||{};
   const allFlats=await ga('flats');
+  // Only Vacant flats are eligible for a new tenant; when editing, keep the tenant's
+  // current flat selectable too even though it's Occupied (so they can view/save unchanged).
+  let flats=allFlats.filter(fl=>fl.status==='Vacant'||fl.id===f.flatId);
   // When a building is active, show that building's flats first; others still available
-  let flats=allFlats.slice().sort((a,b)=>{
+  flats=flats.slice().sort((a,b)=>{
     const aMatch=activeBuilding==='All'||a.block===activeBuilding?0:1;
     const bMatch=activeBuilding==='All'||b.block===activeBuilding?0:1;
     return aMatch-bMatch;
@@ -1218,7 +1221,7 @@ async function saveTenant(){
   // Check: is this flat already occupied by a DIFFERENT tenant?
   if(!editId){
     const allTenants=await ga('tenants');
-    const conflict=allTenants.find(t=>t.flatId===flatId);
+    const conflict=allTenants.find(t=>t.flatId===flatId&&!t.movedOut);
     if(conflict){
       showConfirm(
         '⚠️ Flat Already Occupied',
@@ -1552,6 +1555,7 @@ async function openBillForm(flatId,billData){
         <select class="fc" id="bf-acct">${acctOpts}</select></div>
     </div>
     <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:var(--amber);text-transform:uppercase;letter-spacing:.5px">— Rent —</div>
+    <div id="bf-prorate-note"></div>
     <div class="frow">
       <div class="fg"><label class="fl">Rent Due (₹)</label>
         <input class="fc" id="bf-rdue" type="number" value="${f.rentDue||''}" oninput="calcTotal()" placeholder="15000"></div>
@@ -1658,10 +1662,23 @@ function calcTotal(){
 async function onBillFlatSelect(el){
   const id=parseInt(el.value);if(!id)return;
   const fl=await g('flats',id);
-  if(fl&&fl.rent)document.getElementById('bf-rdue').value=fl.rent;
+  if(fl&&fl.rent) await applyProratedRentToForm(id,fl.rent);
   await pullWaterReading(id);
   calcTotal();
   await checkBillDuplicate();
+}
+
+// Fills bf-rdue with the prorated amount if the tenant moved in mid-month, else full rent.
+async function applyProratedRentToForm(flatId, fullRent){
+  const month=document.getElementById('bf-month')?.value;
+  const ten=(await ga('tenants')).find(t=>t.flatId===flatId&&!t.movedOut);
+  const rentDue=prorateRent(fullRent,ten?.moveIn,month);
+  const rdueEl=document.getElementById('bf-rdue');
+  if(rdueEl) rdueEl.value=rentDue;
+  const noteEl=document.getElementById('bf-prorate-note');
+  if(noteEl) noteEl.innerHTML = rentDue!==(parseFloat(fullRent)||0)
+    ? `<div style="background:var(--teal-lt);border-radius:8px;padding:7px 11px;font-size:12px;color:var(--teal,#0d9488);font-weight:700;margin-bottom:6px">📐 Rent prorated — tenant moved in ${ten.moveIn} (full rent ₹${(parseFloat(fullRent)||0).toLocaleString('en-IN')})</div>`
+    : '';
 }
 
 // Auto-fill water fields from water meter readings for selected flat + month
@@ -1708,7 +1725,14 @@ async function pullWaterReading(flatId){
 async function onBillMonthChange(){
   await checkBillDuplicate();
   const flatId=parseInt(document.getElementById('bf-flat')?.value);
-  if(flatId) await pullWaterReading(flatId);
+  if(flatId){
+    await pullWaterReading(flatId);
+    if(!editId){ // don't clobber rent due on an existing real entry
+      const fl=await g('flats',flatId);
+      if(fl&&fl.rent) await applyProratedRentToForm(flatId,fl.rent);
+      calcTotal();
+    }
+  }
 }
 
 // Returns true if a billing entry is a blank "pending stub" created by Add Next Month
@@ -1896,6 +1920,20 @@ async function runMarkPaid(){
   toast('✅ Marked as Paid');renderDash();
 }
 
+// Prorate rent for a tenant who moved in mid-month: if moveInDate falls within
+// billMonth ("YYYY-MM") and isn't the 1st, charge only for days actually stayed.
+function prorateRent(monthlyRent, moveInDate, billMonth){
+  monthlyRent = parseFloat(monthlyRent)||0;
+  if(!moveInDate||!billMonth) return monthlyRent;
+  const mi = new Date(moveInDate+'T00:00:00');
+  if(isNaN(mi.getTime())) return monthlyRent;
+  const [by,bm] = billMonth.split('-').map(Number);
+  if(mi.getFullYear()!==by || (mi.getMonth()+1)!==bm || mi.getDate()<=1) return monthlyRent;
+  const daysInMonth = new Date(by,bm,0).getDate();
+  const daysStayed  = daysInMonth - mi.getDate() + 1;
+  return Math.round((monthlyRent/daysInMonth)*daysStayed);
+}
+
 async function doAddNextMonth(){
   // Default to next month but let the user pick any month
   const today=new Date();
@@ -1925,6 +1963,7 @@ async function previewAddMonth(){
   const allFlats = await ga('flats');
   const flats    = filterByBuilding(allFlats);
   const bills    = await ga('billing');
+  const tenants  = await ga('tenants');
   const occ      = flats.filter(f=>f.status==='Occupied');
   const existing = bills.filter(b=>b.month===month);
   const toAdd    = occ.filter(f=>!existing.find(b=>b.flatId===f.id));
@@ -1945,7 +1984,13 @@ async function previewAddMonth(){
       ${alrDone.length>0?`<div style="font-size:11px;margin-top:4px;opacity:.8">${alrDone.length} flat(s) already have entries and will be skipped</div>`:''}
     </div>
     <div style="font-size:12px;color:var(--gray-600);max-height:140px;overflow-y:auto;background:var(--gray-50);border-radius:8px;padding:8px 10px">
-      ${toAdd.map(f=>`<div style="padding:3px 0;border-bottom:1px solid var(--gray-200)">🏠 ${esc(f.block)} — ${esc(f.flatNo)} &nbsp;<span style="color:var(--gray-400)">₹${(parseFloat(f.rent)||0).toLocaleString('en-IN')}/mo</span></div>`).join('')}
+      ${toAdd.map(f=>{
+        const ten=tenants.find(t=>t.flatId===f.id&&!t.movedOut);
+        const fullRent=parseFloat(f.rent)||0;
+        const rent=prorateRent(fullRent,ten?.moveIn,month);
+        const prorated=rent!==fullRent;
+        return`<div style="padding:3px 0;border-bottom:1px solid var(--gray-200)">🏠 ${esc(f.block)} — ${esc(f.flatNo)} &nbsp;<span style="color:${prorated?'var(--teal,#0d9488)':'var(--gray-400)'}">₹${rent.toLocaleString('en-IN')}/mo${prorated?` (prorated, moved in ${ten.moveIn})`:''}</span></div>`;
+      }).join('')}
     </div>`;
 }
 
@@ -1956,6 +2001,7 @@ async function runAddMonth(){
   const allFlats = await ga('flats');
   const flats    = filterByBuilding(allFlats);
   const bills    = await ga('billing');
+  const tenants  = await ga('tenants');
   const occ      = flats.filter(f=>f.status==='Occupied');
   const existing = bills.filter(b=>b.month===month);
   const toAdd    = occ.filter(f=>!existing.find(b=>b.flatId===f.id));
@@ -1966,14 +2012,20 @@ async function runAddMonth(){
     closeModal();return;
   }
 
+  let proratedCount=0;
   for(const fl of toAdd){
-    await add('billing',{flatId:fl.id,month,rentDue:parseFloat(fl.rent)||0,
+    const ten=tenants.find(t=>t.flatId===fl.id&&!t.movedOut);
+    const fullRent=parseFloat(fl.rent)||0;
+    const rentDue=prorateRent(fullRent,ten?.moveIn,month);
+    const prorated=rentDue!==fullRent;
+    if(prorated) proratedCount++;
+    await add('billing',{flatId:fl.id,month,rentDue,
       rentPaid:0,rentStatus:'Pending',waterUnits:0,waterRate:0.10,waterAmount:0,
       waterStatus:'Pending',elecUnits:0,elecAmount:0,elecStatus:'Pending',
-      totalDue:parseFloat(fl.rent)||0,total:0,
-      account:'',paidDate:'',notes:'',createdAt:new Date().toISOString()});
+      totalDue:rentDue,total:0,
+      account:'',paidDate:'',notes:prorated?`Prorated rent — moved in ${ten.moveIn}`:'',createdAt:new Date().toISOString()});
   }
-  toast(`✅ ${toAdd.length} entries added for ${label}`);
+  toast(`✅ ${toAdd.length} entries added for ${label}${proratedCount?` (${proratedCount} prorated)`:''}`);
   closeModal();
   // Switch billing view to the selected month
   const [y,m]=month.split('-').map(Number);
