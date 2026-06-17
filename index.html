@@ -4562,46 +4562,56 @@ async function loadMoveOutDetails(flatId){
   const currentMonthRent = monthlyRent;
 
   const autoDeduct = pendingRent + waterDues + elecDues + paintingCharges + currentMonthRent;
-  const refund     = Math.max(0, deposit - autoDeduct);
+  const refund     = deposit - autoDeduct;
 
   const el=document.getElementById('mo-details');
   if(!el)return;
 
-  function deductRow(label, amt, editable=false, id=''){
+  function deductRow(label, amt, editable=false, id='', hint=''){
     if(amt===0&&!editable) return'';
-    return`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--gray-100)">
-      <span style="font-size:12px;color:var(--gray-600)">${label}</span>
-      ${editable
-        ? `<input type="number" id="${id}" value="${amt}" oninput="recalcMoRefund()" style="width:100px;padding:4px 8px;border:1.5px solid var(--gray-200);border-radius:7px;font-size:13px;font-weight:700;color:var(--red);text-align:right">`
-        : `<span style="font-size:13px;font-weight:700;color:var(--red)">−₹${amt.toLocaleString('en-IN')}</span>`}
+    return`<div style="padding:6px 0;border-bottom:1px solid var(--gray-100)">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <span style="font-size:12px;color:var(--gray-600)">${label}</span>
+          ${hint?`<div style="font-size:10px;color:var(--teal,#0d9488);margin-top:1px">⚠️ ${hint}</div>`:''}
+        </div>
+        ${editable
+          ? `<input type="number" id="${id}" value="${amt}" oninput="recalcMoRefund()" onclick="this.select()" style="width:100px;padding:4px 8px;border:1.5px solid var(--gray-200);border-radius:7px;font-size:13px;font-weight:700;color:var(--red);text-align:right">`
+          : `<span style="font-size:13px;font-weight:700;color:var(--red)">−₹${amt.toLocaleString('en-IN')}</span>`}
+      </div>
     </div>`;
   }
 
   el.innerHTML=`
+    <input type="hidden" id="mo-deposit-val" value="${deposit}">
     <div style="background:var(--blue-lt);border-radius:9px;padding:11px 13px;margin:10px 0 12px">
-      <div style="font-size:13px;font-weight:800;margin-bottom:8px">👤 ${esc(ten?.name||'No tenant')} · ${esc(fl.block)}—${esc(fl.flatNo)}</div>
-      <div style="display:flex;justify-content:space-between;font-size:13px"><span>Security Deposit</span><b style="color:var(--green)">₹${deposit.toLocaleString('en-IN')}</b></div>
+      <div style="font-size:13px;font-weight:800;margin-bottom:4px">👤 ${esc(ten?.name||'No tenant')} · ${esc(fl.block)}—${esc(fl.flatNo)}</div>
     </div>
 
-    <div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Deductions</div>
-    <div style="background:white;border:1.5px solid var(--gray-200);border-radius:9px;padding:8px 12px;margin-bottom:12px">
+    <div style="font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Pending Dues</div>
+    <div style="background:white;border:1.5px solid var(--gray-200);border-radius:9px;padding:8px 12px;margin-bottom:10px">
       ${deductRow('🏠 Current Month Rent', currentMonthRent, true, 'mo-current-rent')}
       ${deductRow('🎨 Painting & Cleaning (1 month rent)', paintingCharges, true, 'mo-painting')}
-      ${pendingRent>0  ? deductRow(`💰 Pending Rent (${pendingBills.length} month${pendingBills.length!==1?'s':''})`, pendingRent, true, 'mo-rent-due')  : ''}
-      ${deductRow('💧 Water Bill Pending', waterDues, true, 'mo-water-due')}
-      ${deductRow('⚡ Electricity Bill Pending', elecDues, true, 'mo-elec-due')}
+      ${pendingRent>0 ? deductRow(`💰 Pending Rent (${pendingBills.length} month${pendingBills.length!==1?'s':''})`, pendingRent, true, 'mo-rent-due') : ''}
+      ${deductRow('💧 Water Bill Pending', waterDues, true, 'mo-water-due', waterDues>0?`₹${waterDues.toLocaleString('en-IN')} to be paid by tenant`:'')}
+      ${deductRow('⚡ Electricity Bill Pending', elecDues, true, 'mo-elec-due', elecDues>0?`₹${elecDues.toLocaleString('en-IN')} to be paid by tenant`:'')}
       ${deductRow('🔧 Other Deductions (damage etc.)', 0, true, 'mo-other')}
       <div style="display:flex;justify-content:space-between;padding:8px 0 2px;font-size:13px;font-weight:900;color:var(--red);margin-top:4px;border-top:2px solid var(--gray-200)">
-        <span>Total Deductions</span><span id="mo-total-ded">₹${autoDeduct.toLocaleString('en-IN')}</span>
+        <span>Total Dues</span><span id="mo-total-ded">₹${autoDeduct.toLocaleString('en-IN')}</span>
       </div>
     </div>
 
-    <div style="border-radius:9px;padding:12px 14px;margin-bottom:12px" id="mo-refund-box" style="background:var(--green-lt)">
+    <div style="background:var(--green-lt);border-radius:9px;padding:9px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:13px;color:var(--green);font-weight:700">🔐 Less: Security Deposit</span>
+      <span style="font-size:14px;font-weight:900;color:var(--green)">−₹${deposit.toLocaleString('en-IN')}</span>
+    </div>
+
+    <div style="border-radius:9px;padding:12px 14px;margin-bottom:12px;background:${refund>0?'var(--green-lt)':refund<0?'var(--red-lt)':'var(--gray-100)'}" id="mo-refund-box">
       <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900">
-        <span>Refund to Tenant</span>
-        <span id="mo-refund-amt" style="color:${refund>0?'var(--green)':'var(--red)'}">₹${refund.toLocaleString('en-IN')}</span>
+        <span id="mo-refund-label" style="color:${refund>0?'var(--green)':refund<0?'var(--red)':'var(--gray-600)'}">${refund>0?'Refund to Tenant':refund<0?'Amount to be paid by Tenant':'No Refund Due'}</span>
+        <span id="mo-refund-amt" style="color:${refund>0?'var(--green)':refund<0?'var(--red)':'var(--gray-600)'}">₹${Math.abs(refund).toLocaleString('en-IN')}</span>
       </div>
-      <div style="font-size:11px;color:var(--gray-500);margin-top:3px">Deposit ₹${deposit.toLocaleString('en-IN')} − Deductions</div>
+      <div style="font-size:11px;color:var(--gray-500);margin-top:3px">Total Dues ₹${autoDeduct.toLocaleString('en-IN')} − Security Deposit ₹${deposit.toLocaleString('en-IN')}</div>
     </div>
 
     <div class="fg"><label class="fl">Move-Out Date</label>
@@ -4616,22 +4626,24 @@ async function loadMoveOutDetails(flatId){
 }
 
 function recalcMoRefund(depositOverride){
-  const deposit = depositOverride || parseFloat(document.querySelector('#mo-details .scard')?.textContent?.replace(/[^0-9]/g,''))||0;
   const fields  = ['mo-current-rent','mo-painting','mo-rent-due','mo-water-due','mo-elec-due','mo-other'];
   const totalDed= fields.reduce((s,id)=>s+(parseFloat(document.getElementById(id)?.value)||0),0);
-  const refund  = Math.max(0, (parseFloat(document.querySelector('[style*="color:var(--green)"]')?.textContent?.replace(/[^0-9]/g,''))||0) - totalDed);
+  const dep = depositOverride!=null ? depositOverride : parseFloat(document.getElementById('mo-deposit-val')?.value)||0;
+  const ref = dep - totalDed;
 
-  // Re-read deposit from the detail block
-  const depositEl = document.querySelector('#mo-details b[style*="var(--green)"]');
-  const dep = depositEl ? parseFloat(depositEl.textContent.replace(/[^0-9.]/g,'').replace(',',''))||0 : 0;
-  const ref = Math.max(0, dep - totalDed);
-
-  const dedEl=document.getElementById('mo-total-ded');
-  const refEl=document.getElementById('mo-refund-amt');
-  const box  =document.getElementById('mo-refund-box');
-  if(dedEl) dedEl.textContent='₹'+totalDed.toLocaleString('en-IN');
-  if(refEl){refEl.textContent='₹'+ref.toLocaleString('en-IN');refEl.style.color=ref>0?'var(--green)':'var(--red)';}
-  if(box)   box.style.background=ref>0?'var(--green-lt)':'var(--red-lt)';
+  const dedEl  = document.getElementById('mo-total-ded');
+  const refEl  = document.getElementById('mo-refund-amt');
+  const refLbl = document.getElementById('mo-refund-label');
+  const box    = document.getElementById('mo-refund-box');
+  const color  = ref>0?'var(--green)':ref<0?'var(--red)':'var(--gray-600)';
+  const label  = ref>0?'Refund to Tenant':ref<0?'Amount to be paid by Tenant':'No Refund Due';
+  const bg     = ref>0?'var(--green-lt)':ref<0?'var(--red-lt)':'var(--gray-100)';
+  const subEl = box?.querySelector('div:last-child');
+  if(dedEl)  dedEl.textContent='₹'+totalDed.toLocaleString('en-IN');
+  if(refEl)  {refEl.textContent='₹'+Math.abs(ref).toLocaleString('en-IN');refEl.style.color=color;}
+  if(refLbl) {refLbl.textContent=label;refLbl.style.color=color;}
+  if(box)    box.style.background=bg;
+  if(subEl)  subEl.textContent=`Total Dues ₹${totalDed.toLocaleString('en-IN')} − Security Deposit ₹${dep.toLocaleString('en-IN')}`;
 }
 
 function calcMoRefund(deposit){ recalcMoRefund(deposit); } // legacy alias
@@ -4655,12 +4667,13 @@ async function processMoveOut(flatId,deposit){
   const reason = reasonParts.join(' + ');
   const date   = document.getElementById('mo-date')?.value||new Date().toISOString().split('T')[0];
   const notes  = document.getElementById('mo-notes')?.value.trim()||'';
-  const refund = Math.max(0,deposit-ded);
+  const refund = deposit-ded;
   const fl     = await g('flats',flatId);
   const ten    = (await ga('tenants')).find(t=>t.flatId===flatId);
+  const refundLabel = refund>0?`Refund to tenant: ₹${refund.toLocaleString('en-IN')}`:refund<0?`Tenant to pay: ₹${Math.abs(refund).toLocaleString('en-IN')}`:'No refund';
 
   showConfirm('Confirm Move-Out',
-    `Move out ${ten?.name||'tenant'} from ${fl.block}-${fl.flatNo}? Refund: ₹${refund.toLocaleString('en-IN')}. This cannot be undone.`,
+    `Move out ${ten?.name||'tenant'} from ${fl.block}-${fl.flatNo}? ${refundLabel}. This cannot be undone.`,
     async()=>{
       // Mark flat as Vacant
       await put('flats',{...fl,status:'Vacant',updatedAt:new Date().toISOString()});
@@ -4742,9 +4755,9 @@ async function _showMoveOutReportAsync(m){
         <span>Total Deductions</span><span>−₹${(m.deductions||0).toLocaleString('en-IN')}</span>
       </div>
     </div>
-    <div style="display:flex;justify-content:space-between;padding:12px;background:var(--${(m.refund||0)>0?'green':'gray-100'}-lt);border-radius:9px;margin-bottom:12px">
-      <span style="font-size:15px;font-weight:900;color:var(--${(m.refund||0)>0?'green':'gray-600'})">${(m.refund||0)>0?'Refund to Tenant':'No Refund Due'}</span>
-      <span style="font-size:18px;font-weight:900;color:var(--${(m.refund||0)>0?'green':'gray-600'})">₹${(m.refund||0).toLocaleString('en-IN')}</span>
+    <div style="display:flex;justify-content:space-between;padding:12px;background:${(m.refund||0)>0?'var(--green-lt)':(m.refund||0)<0?'var(--red-lt)':'var(--gray-100)'};border-radius:9px;margin-bottom:12px">
+      <span style="font-size:15px;font-weight:900;color:${(m.refund||0)>0?'var(--green)':(m.refund||0)<0?'var(--red)':'var(--gray-600)'}">${(m.refund||0)>0?'Refund to Tenant':(m.refund||0)<0?'Amount to be paid by Tenant':'No Refund Due'}</span>
+      <span style="font-size:18px;font-weight:900;color:${(m.refund||0)>0?'var(--green)':(m.refund||0)<0?'var(--red)':'var(--gray-600)'}">₹${Math.abs(m.refund||0).toLocaleString('en-IN')}</span>
     </div>
     ${m.notes?`<div style="font-size:12px;color:var(--gray-500);padding:8px;background:var(--gray-50);border-radius:7px;margin-bottom:10px">📝 ${esc(m.notes)}</div>`:''}
     <div style="display:flex;justify-content:space-between;margin-top:20px;padding-top:10px;border-top:1px solid var(--gray-200)">
@@ -4813,7 +4826,7 @@ async function sendMoveOutWA(m){
   if(m.other>0)     lines.push(`🔧 Other Deductions    : −₹${m.other.toLocaleString('en-IN')}`);
   lines.push(
     `────────────────────`,
-    `*${(m.refund||0)>0?'Refund to You':'No Refund'} : ₹${(m.refund||0).toLocaleString('en-IN')}*`,
+    `*${(m.refund||0)>0?'Refund to You':(m.refund||0)<0?'Amount to be Paid by You':'No Refund'} : ₹${Math.abs(m.refund||0).toLocaleString('en-IN')}*`,
     ``, m.notes?`Note: ${m.notes}`:'',
     ``, society
   );
