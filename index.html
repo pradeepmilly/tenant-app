@@ -595,7 +595,9 @@ async function calcLateFee(bill){
   const graceDays=parseInt(await getSetting('lateGraceDays','5'))||0;
   const dueDay=parseInt(await getSetting('rentDueDay','1'))||1;
   const [y,m]=bill.month.split('-').map(Number);
-  const dueDate=new Date(y,m-1,dueDay);
+  // Rent is postpaid: the bill's "month" is the month of stay, and rent for it
+  // falls due on rentDueDay of the FOLLOWING month (e.g. June rent due July 1).
+  const dueDate=new Date(y,m,dueDay);
   const today=new Date();today.setHours(0,0,0,0);
   const daysLate=Math.max(0,Math.floor((today-dueDate)/86400000)-graceDays);
   if(daysLate<=0) return 0;
@@ -1279,7 +1281,10 @@ async function viewTenant(id){
   const t=await g('tenants',id);
   const fl=await g('flats',t.flatId);
   const bills=await ga('billing');
-  const tBills=bills.filter(b=>b.flatId===t.flatId).sort((a,b)=>b.month.localeCompare(a.month));
+  // Scope to this tenant's own tenancy — exclude bills from before they moved in,
+  // which would otherwise be a previous tenant's billing history on the same flat.
+  const tMoveInMonth=t.moveIn?t.moveIn.slice(0,7):null;
+  const tBills=bills.filter(b=>b.flatId===t.flatId&&(!tMoveInMonth||b.month>=tMoveInMonth)).sort((a,b)=>b.month.localeCompare(a.month));
   const totalPaid=tBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0);
   const today=new Date();today.setHours(0,0,0,0);
   const end=t.agreementEnd?new Date(t.agreementEnd):null;
@@ -2483,8 +2488,9 @@ async function openSettings(){
     </div>
     <div style="padding:8px 0 4px;font-size:12px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.5px;margin-top:8px">— Late Fee —</div>
     <div class="frow">
-      <div class="fg"><label class="fl">Rent Due Day of Month</label>
-        <input class="fc" id="s-dueday" type="number" min="1" max="28" value="${rentDueDay}" placeholder="1"></div>
+      <div class="fg"><label class="fl">Rent Due Day (of following month)</label>
+        <input class="fc" id="s-dueday" type="number" min="1" max="28" value="${rentDueDay}" placeholder="1">
+        <div style="font-size:11px;color:var(--gray-500);margin-top:3px">Rent is postpaid — e.g. June's rent is due on this day in July</div></div>
       <div class="fg"><label class="fl">Grace Period (days)</label>
         <input class="fc" id="s-grace" type="number" min="0" value="${lateGraceDays}" placeholder="5"></div>
     </div>
@@ -5457,8 +5463,11 @@ async function openDriveBackupSettings(){
 // ═══════════════════════════════════════════
 async function viewFlatLedger(flatId){
   const fl=await g('flats',flatId);
-  const ten=(await ga('tenants')).find(t=>t.flatId===flatId);
-  const allBills=(await gaIdx('billing','flatId',flatId)).sort((a,b)=>b.month.localeCompare(a.month));
+  const ten=(await ga('tenants')).find(t=>t.flatId===flatId&&!t.movedOut);
+  // Scope to the current tenant's own tenancy — exclude bills from before they moved in,
+  // which would otherwise be a previous tenant's billing history mixed into this flat's ledger.
+  const tMoveInMonth=ten?.moveIn?ten.moveIn.slice(0,7):null;
+  const allBills=(await gaIdx('billing','flatId',flatId)).filter(b=>!tMoveInMonth||b.month>=tMoveInMonth).sort((a,b)=>b.month.localeCompare(a.month));
   const allPay=await ga('payments');
 
   let totalDue=0,totalPaid=0;
@@ -5540,7 +5549,8 @@ async function showAgingReport(){
   let total=0;
   for(const b of pending){
     const [y,m]=b.month.split('-').map(Number);
-    const dueDate=new Date(y,m-1,rentDueDay);
+    // Postpaid: rent for this bill's month falls due on rentDueDay of the next month.
+    const dueDate=new Date(y,m,rentDueDay);
     const days=Math.floor((today-dueDate)/86400000);
     const fl=allFlats.find(f=>f.id===b.flatId);
     const ten=tenants.find(t=>t.flatId===b.flatId);
