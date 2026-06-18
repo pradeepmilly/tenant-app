@@ -1284,7 +1284,15 @@ async function viewTenant(id){
   // Scope to this tenant's own tenancy — exclude bills from before they moved in,
   // which would otherwise be a previous tenant's billing history on the same flat.
   const tMoveInMonth=t.moveIn?t.moveIn.slice(0,7):null;
-  const tBills=bills.filter(b=>b.flatId===t.flatId&&(!tMoveInMonth||b.month>=tMoveInMonth)).sort((a,b)=>b.month.localeCompare(a.month));
+  // Same-month handover: a bill dated the move-in month can still belong to the previous
+  // tenant if it was created before this tenant's move-in date.
+  const tBills=bills.filter(b=>{
+    if(b.flatId!==t.flatId) return false;
+    if(!tMoveInMonth) return true;
+    if(b.month>tMoveInMonth) return true;
+    if(b.month<tMoveInMonth) return false;
+    return !b.createdAt||b.createdAt>=t.moveIn;
+  }).sort((a,b)=>b.month.localeCompare(a.month));
   const totalPaid=tBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0);
   const today=new Date();today.setHours(0,0,0,0);
   const end=t.agreementEnd?new Date(t.agreementEnd):null;
@@ -5466,8 +5474,15 @@ async function viewFlatLedger(flatId){
   const ten=(await ga('tenants')).find(t=>t.flatId===flatId&&!t.movedOut);
   // Scope to the current tenant's own tenancy — exclude bills from before they moved in,
   // which would otherwise be a previous tenant's billing history mixed into this flat's ledger.
+  // A handover can happen mid-month, so for the move-in month itself also check the bill's
+  // createdAt timestamp against the move-in date (same-month bills can still belong to the old tenant).
   const tMoveInMonth=ten?.moveIn?ten.moveIn.slice(0,7):null;
-  const allBills=(await gaIdx('billing','flatId',flatId)).filter(b=>!tMoveInMonth||b.month>=tMoveInMonth).sort((a,b)=>b.month.localeCompare(a.month));
+  const allBills=(await gaIdx('billing','flatId',flatId)).filter(b=>{
+    if(!tMoveInMonth) return true;
+    if(b.month>tMoveInMonth) return true;
+    if(b.month<tMoveInMonth) return false;
+    return !b.createdAt||b.createdAt>=ten.moveIn;
+  }).sort((a,b)=>b.month.localeCompare(a.month));
   const allPay=await ga('payments');
 
   let totalDue=0,totalPaid=0;
