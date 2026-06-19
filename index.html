@@ -3007,6 +3007,7 @@ async function runImport(wb){
   const moSheet=xlsxSheetToObjects(wb, sheetNames.find(s=>s.includes('vacat'))||'Vacated_Tenants');
   if(moSheet&&moSheet.length>0){
     const existingMo=await ga('moveouts');
+    const flatsForMo=await ga('flats');
     for(const row of moSheet){
       const name=String(row['Tenant Name']||'').trim();
       const block=String(row['Block']||'').trim();
@@ -3014,6 +3015,7 @@ async function runImport(wb){
       const moveOutDate=String(row['Move-Out Date']||'').trim();
       if(!name||!block||!flatNo){skipped++;continue;}
       if(existingMo.find(e=>e.tenantName===name&&e.block===block&&e.flatNo===flatNo&&e.moveOutDate===moveOutDate)){skipped++;continue;}
+      const moFlat=flatsForMo.find(f=>f.block===block&&f.flatNo===flatNo);
       await add('moveouts',{
         tenantId:null,tenantName:name,
         tenantPhone:String(row['Phone']||''),tenantEmail:String(row['Email']||''),
@@ -3021,7 +3023,7 @@ async function runImport(wb){
         moveInDate:String(row['Move-In Date']||''),moveOutDate,
         agreementDur:String(row['Agreement Duration']||''),agreementEnd:String(row['Agreement End']||''),
         noticePeriod:String(row['Notice Period']||''),tenantRemarks:String(row['Tenant Remarks']||''),
-        block,flatNo,flatId:null,
+        block,flatNo,flatId:moFlat?.id||null,
         deposit:parseFloat(row['Security Deposit']||0),deductions:parseFloat(row['Deductions']||0),
         deductionReason:String(row['Deduction Reason']||''),painting:parseFloat(row['Painting']||0),
         rentDue:parseFloat(row['Rent Due']||0),waterDue:parseFloat(row['Water Due']||0),
@@ -4358,11 +4360,20 @@ function removePin(){
 // ═══════════════════════════════════════════
 // RENT RECEIPT PDF
 // ═══════════════════════════════════════════
+// Rent is postpaid: a bill recorded/paid in calendar month X is actually
+// covering the tenant's stay in month X-1 (e.g. paid in June → rent for May).
+// Receipts should label the rent period as the month BEFORE bill.month.
+function rentPeriodLabel(billMonth){
+  let [y,m]=billMonth.split('-').map(Number);
+  m-=1; if(m<1){m=12;y--;}
+  return `${MONTHS[m-1]} ${y}`;
+}
+
 // Builds the inner receipt HTML (used both in-app and print)
 function buildReceiptHTML(bill, fl, ten, society){
   const now       = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
   const receiptNo = `RCP-${fl.id}-${bill.month.replace('-','')}`;
-  const monthFmt  = `${MONTHS[parseInt(bill.month.split('-')[1])-1]} ${bill.month.split('-')[0]}`;
+  const monthFmt  = rentPeriodLabel(bill.month);
   return{receiptNo, monthFmt, html:`
     <div style="text-align:center;border-bottom:3px double #1a3a5c;padding-bottom:12px;margin-bottom:14px">
       <div style="font-size:20px;font-weight:900;color:#1a3a5c">🏢 ${esc(society)}</div>
@@ -4400,11 +4411,57 @@ function buildReceiptHTML(bill, fl, ten, society){
   `};
 }
 
+// A flat can have had several tenants over time. A bill's "tenant" must be
+// resolved the same way the ledger does — never just "whoever lives there now" —
+// otherwise a receipt for an old bill (e.g. paid by the previous tenant before
+// move-out) ends up printed with the NEW tenant's name on it.
+async function findBillTenant(bill, tenants){
+  if(bill.tenantId){
+    const direct=tenants.find(t=>t.id===bill.tenantId);
+    if(direct) return direct;
+  }
+  const candidates=tenants.filter(t=>t.flatId===bill.flatId);
+  const refDate=bill.paidDate||(bill.month?bill.month+'-01':'');
+  const inRange=candidates.filter(t=>{
+    if(t.moveIn&&refDate&&refDate<t.moveIn) return false;
+    if(t.moveOutDate&&refDate&&refDate>t.moveOutDate) return false;
+    return true;
+  });
+  if(inRange.length===1) return inRange[0];
+  if(inRange.length>1) return inRange.sort((a,b)=>(b.moveIn||'').localeCompare(a.moveIn||''))[0];
+
+  // No tenant row covers this bill's date — happens when an older tenant was
+  // removed from the 'tenants' table instead of kept with movedOut:true (e.g.
+  // imported/demo data, or a manual edit rather than using the Move-Out flow).
+  // Fall back to move-out history, which snapshots who lived there and when,
+  // independent of whether their tenants row still exists.
+  if(candidates.length<=1){
+    // Imported moveout records often have flatId:null (matched only by block/flatNo
+    // text at import time) — fall back to matching on the flat's block+flatNo too.
+    const fl=await g('flats',bill.flatId);
+    const moveouts=(await ga('moveouts')).filter(m=>m.flatId===bill.flatId||(fl&&m.block===fl.block&&m.flatNo===fl.flatNo));
+    if(moveouts.length){
+      const moMatch=moveouts.find(m=>{
+        if(m.moveInDate&&refDate&&refDate<m.moveInDate) return false;
+        if(m.moveOutDate&&refDate&&refDate>m.moveOutDate) return false;
+        return true;
+      })||moveouts.sort((a,b)=>(b.moveOutDate||'').localeCompare(a.moveOutDate||''))[0];
+      // Only trust the move-out record if it actually predates/covers the bill —
+      // don't show a vacated tenant's name on a bill that's clearly the current one.
+      if(moMatch && (!candidates[0]?.moveIn || refDate<candidates[0].moveIn)){
+        return {name:moMatch.tenantName,phone:moMatch.tenantPhone,id:moMatch.tenantId,flatId:bill.flatId,_fromMoveout:true};
+      }
+    }
+  }
+  if(candidates.length<=1) return candidates[0]||null;
+  return candidates.find(t=>!t.movedOut)||candidates.sort((a,b)=>(b.moveIn||'').localeCompare(a.moveIn||''))[0];
+}
+
 async function generateReceipt(billId, flatId){
   const bill    = await g('billing', billId);
   const fl      = await g('flats', flatId);
   const tenants = await ga('tenants');
-  const ten     = tenants.find(t=>t.flatId===flatId);
+  const ten     = await findBillTenant(bill, tenants);
   const society = await getSetting('society','Society Management');
   const cc      = await getSetting('countryCode','91');
   const {receiptNo, monthFmt, html} = buildReceiptHTML(bill, fl, ten, society);
@@ -4456,7 +4513,7 @@ function printReceiptInApp(society, receiptNo, monthFmt){
 // ═══════════════════════════════════════════
 
 function buildReceiptMsg(bill, fl, ten, society){
-  const monthFmt=`${MONTHS[parseInt(bill.month.split('-')[1])-1]} ${bill.month.split('-')[0]}`;
+  const monthFmt=rentPeriodLabel(bill.month);
   const receiptNo=`RCP-${fl.id}-${bill.month.replace('-','')}`;
   const lines=[
     `Dear ${ten.name},`,
@@ -4489,7 +4546,7 @@ async function sendReceiptWA(billId, flatId){
   const bill    = await g('billing', billId);
   const fl      = await g('flats', flatId);
   const tenants = await ga('tenants');
-  const ten     = tenants.find(t=>t.flatId===flatId);
+  const ten     = await findBillTenant(bill, tenants);
   const cc      = await getSetting('countryCode','91');
   const society = await getSetting('society','Society Management');
 
@@ -4516,7 +4573,7 @@ async function sendAllReceiptsWA(){
   const queue=[], noPh=[];
   for(const bill of paidBills){
     const fl  = allFlats.find(f=>f.id===bill.flatId);
-    const ten = tenants.find(t=>t.flatId===bill.flatId);
+    const ten = await findBillTenant(bill, tenants);
     if(!ten?.phone){ noPh.push(fl?.flatNo||'?'); continue; }
     const ph  = cleanPhone(ten.phone, cc);
     const msg = buildReceiptMsg(bill, fl, ten, society);
@@ -5034,6 +5091,7 @@ async function importMoveOutExcel(input){
       if(!ws){toast('❌ No sheet found');return;}
       const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
       const existing=await ga('moveouts');
+      const flatsForMo=await ga('flats');
       let added=0,skipped=0;
       for(const row of rows){
         const name=String(row['Tenant Name']||'').trim();
@@ -5043,6 +5101,7 @@ async function importMoveOutExcel(input){
         if(!name||!block||!flatNo){skipped++;continue;}
         // Skip if same name+flat+moveOutDate already exists
         if(existing.find(e=>e.tenantName===name&&e.block===block&&e.flatNo===flatNo&&e.moveOutDate===moveOutDate)){skipped++;continue;}
+        const moFlat=flatsForMo.find(f=>f.block===block&&f.flatNo===flatNo);
         await add('moveouts',{
           tenantId:null,
           tenantName:name,
@@ -5057,7 +5116,7 @@ async function importMoveOutExcel(input){
           noticePeriod:String(row['Notice Period']||''),
           tenantRemarks:String(row['Tenant Remarks']||''),
           block,flatNo,
-          flatId:null,
+          flatId:moFlat?.id||null,
           deposit:parseFloat(row['Security Deposit']||0),
           deductions:parseFloat(row['Deductions']||0),
           deductionReason:String(row['Deduction Reason']||''),
