@@ -1285,13 +1285,20 @@ async function viewTenant(id){
   // which would otherwise be a previous tenant's billing history on the same flat.
   const tMoveInMonth=t.moveIn?t.moveIn.slice(0,7):null;
   // Same-month handover: a bill dated the move-in month can still belong to the previous
-  // tenant if it was created before this tenant's move-in date.
+  // tenant. Prefer the tenantId tag (set on all new bills going forward). Otherwise use
+  // paidDate — the date the rent was actually paid for, which is meaningful regardless of
+  // when the DB row was touched — NOT createdAt, which is just a row-write timestamp and
+  // can be from today even for a backfilled/old payment. Last resort: match the tenant's
+  // own prorated rent amount; legacy bills default to excluded if nothing matches.
   const tBills=bills.filter(b=>{
     if(b.flatId!==t.flatId) return false;
     if(!tMoveInMonth) return true;
     if(b.month>tMoveInMonth) return true;
     if(b.month<tMoveInMonth) return false;
-    return !b.createdAt||b.createdAt>=t.moveIn;
+    if(b.tenantId) return b.tenantId===t.id;
+    if(b.paidDate) return b.paidDate>=t.moveIn;
+    const expected=prorateRent(t.rent,t.moveIn,b.month);
+    return Math.abs((parseFloat(b.rentDue)||0)-expected)<=50;
   }).sort((a,b)=>b.month.localeCompare(a.month));
   const totalPaid=tBills.filter(b=>b.rentStatus==='Paid').reduce((s,b)=>s+(parseFloat(b.rentPaid)||0),0);
   const today=new Date();today.setHours(0,0,0,0);
@@ -1499,7 +1506,8 @@ async function quickPaid(flatId,rent,mk,existId){
   const eAmt=parseFloat(base.elecAmount)||0;
   const wPaid=base.waterStatus==='Paid';
   const ePaid=base.elecStatus==='Paid';
-  const data={...base,flatId,month:mk,rentDue:rent,rentPaid:rent,rentStatus:'Paid',
+  const ten=base.tenantId?null:(await ga('tenants')).find(t=>t.flatId===flatId&&!t.movedOut);
+  const data={...base,flatId,month:mk,tenantId:base.tenantId||ten?.id||null,rentDue:rent,rentPaid:rent,rentStatus:'Paid',
     account:base.account||'Cash',paidDate:base.paidDate||new Date().toISOString().split('T')[0],
     notes:base.notes||'',createdAt:base.createdAt||new Date().toISOString(),
     total:rent+(wPaid?wAmt:0)+(ePaid?eAmt:0)};
@@ -1812,7 +1820,11 @@ async function saveBill(){
   else if(_rentPaid > 0 && _rentPaid < _rentDue) _rentStatus = 'Partial';
   else if(_rentPaid === 0 && _rentStatus === 'Paid') _rentStatus = 'Pending'; // guard against stale dropdown
 
-  const data={flatId,month,
+  // Tag the active tenant at the time of billing so a later handover never mixes
+  // a previous tenant's record into the new tenant's ledger/history.
+  const _ten=(await ga('tenants')).find(t=>t.flatId===flatId&&!t.movedOut);
+
+  const data={flatId,month,tenantId:_ten?.id||null,
     account:document.getElementById('bf-acct').value,
     rentDue:_rentDue,
     rentPaid:_rentPaid,
@@ -1919,13 +1931,15 @@ async function runMarkPaid(){
   const fl=await g('flats',flatId);
   const bills=await ga('billing');
   const existing=bills.find(b=>b.flatId===flatId&&b.month===month);
+  const ten=(await ga('tenants')).find(t=>t.flatId===flatId&&!t.movedOut);
   if(existing){
     existing.rentPaid=existing.rentDue;existing.rentStatus='Paid';existing.elecStatus='Paid';
     existing.account=acct;existing.paidDate=new Date().toISOString().split('T')[0];
+    if(!existing.tenantId&&ten) existing.tenantId=ten.id;
     await put('billing',existing);
   } else {
     const rent=parseFloat(fl?.rent)||0;
-    await add('billing',{flatId,month,rentDue:rent,rentPaid:rent,rentStatus:'Paid',
+    await add('billing',{flatId,month,tenantId:ten?.id||null,rentDue:rent,rentPaid:rent,rentStatus:'Paid',
       waterUnits:0,waterRate:0.10,waterAmount:0,elecUnits:0,elecAmount:0,elecStatus:'Paid',
       total:rent,account:acct,paidDate:new Date().toISOString().split('T')[0],notes:'',createdAt:new Date().toISOString()});
   }
@@ -2032,7 +2046,7 @@ async function runAddMonth(){
     const rentDue=prorateRent(fullRent,ten?.moveIn,month);
     const prorated=rentDue!==fullRent;
     if(prorated) proratedCount++;
-    await add('billing',{flatId:fl.id,month,rentDue,
+    await add('billing',{flatId:fl.id,month,tenantId:ten?.id||null,rentDue,
       rentPaid:0,rentStatus:'Pending',waterUnits:0,waterRate:0.10,waterAmount:0,
       waterStatus:'Pending',elecUnits:0,elecAmount:0,elecStatus:'Pending',
       totalDue:rentDue,total:0,
@@ -5474,14 +5488,21 @@ async function viewFlatLedger(flatId){
   const ten=(await ga('tenants')).find(t=>t.flatId===flatId&&!t.movedOut);
   // Scope to the current tenant's own tenancy — exclude bills from before they moved in,
   // which would otherwise be a previous tenant's billing history mixed into this flat's ledger.
-  // A handover can happen mid-month, so for the move-in month itself also check the bill's
-  // createdAt timestamp against the move-in date (same-month bills can still belong to the old tenant).
+  // A handover can happen mid-month, so for the move-in month itself prefer the tenantId
+  // tag (set on all new bills going forward). Otherwise use paidDate — the date rent was
+  // actually paid for, meaningful regardless of when the DB row was written — NOT
+  // createdAt, which is just a row-write timestamp and can be from today even for a
+  // backfilled/old payment. Last resort: match the tenant's own prorated rent amount;
+  // legacy same-month bills default to excluded if nothing matches.
   const tMoveInMonth=ten?.moveIn?ten.moveIn.slice(0,7):null;
   const allBills=(await gaIdx('billing','flatId',flatId)).filter(b=>{
     if(!tMoveInMonth) return true;
     if(b.month>tMoveInMonth) return true;
     if(b.month<tMoveInMonth) return false;
-    return !b.createdAt||b.createdAt>=ten.moveIn;
+    if(b.tenantId) return b.tenantId===ten.id;
+    if(b.paidDate) return b.paidDate>=ten.moveIn;
+    const expected=prorateRent(ten.rent,ten.moveIn,b.month);
+    return Math.abs((parseFloat(b.rentDue)||0)-expected)<=50;
   }).sort((a,b)=>b.month.localeCompare(a.month));
   const allPay=await ga('payments');
 
@@ -6073,14 +6094,19 @@ async function autoAddCurrentMonth(){
     return;
   }
 
+  const tenants = await ga('tenants');
   for(const fl of toAdd){
+    const ten=tenants.find(t=>t.flatId===fl.id&&!t.movedOut);
+    const fullRent=parseFloat(fl.rent)||0;
+    const rentDue=prorateRent(fullRent,ten?.moveIn,mk);
+    const prorated=rentDue!==fullRent;
     await add('billing',{
-      flatId:fl.id, month:mk,
-      rentDue:parseFloat(fl.rent)||0, rentPaid:0, rentStatus:'Pending',
+      flatId:fl.id, month:mk, tenantId:ten?.id||null,
+      rentDue, rentPaid:0, rentStatus:'Pending',
       waterUnits:0, waterRate:0.10, waterAmount:0, waterStatus:'Pending',
       elecUnits:0, elecAmount:0, elecStatus:'Pending',
-      totalDue:parseFloat(fl.rent)||0, total:0,
-      account:'', paidDate:'', notes:'', createdAt:new Date().toISOString()
+      totalDue:rentDue, total:0,
+      account:'', paidDate:'', notes:prorated?`Prorated rent — moved in ${ten.moveIn}`:'', createdAt:new Date().toISOString()
     });
   }
   await setSetting('lastAutoGenMonth', mk);
