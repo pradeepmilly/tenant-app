@@ -1383,7 +1383,7 @@ async function renderBilling(){
   const acctHtml=acctEntries.length===0?'':
     `<div class="sh" style="margin-bottom:8px"><span class="st">💳 ${monthLabel()} — Collection by Mode</span><button class="btn btn-sm btn-ghost" style="font-size:11px" onclick="showReport('accounts')">All time ›</button></div>
     <div class="acct-grid">${acctEntries.map(([name,d])=>`
-      <div class="acct-card" onclick="showReport('accounts')">
+      <div class="acct-card" onclick="showReport('accountDetail','${name.replace(/'/g,"\\'")}')">
         <div class="acct-icon">${getAcctIcon(name)}</div>
         <div class="acct-amt">₹${d.amt.toLocaleString('en-IN')}</div>
         <div class="acct-name">${esc(name)}</div>
@@ -2231,7 +2231,7 @@ function cleanPhone(p,cc){
 // ═══════════════════════════════════════════
 // REPORTS
 // ═══════════════════════════════════════════
-async function showReport(type){
+async function showReport(type,filterAcct){
   const allFlats=await ga('flats');
   const flats=filterByBuilding(allFlats); // scoped
   const flatIds=buildingFlatIds(allFlats);
@@ -2294,6 +2294,30 @@ async function showReport(type){
       ${rows.map(r=>`<tr><td><b>${r.mon}</b></td><td>₹${r.due.toLocaleString('en-IN')}</td><td>₹${r.paid.toLocaleString('en-IN')}</td><td>${r.pct}%</td><td style="color:var(--green)">${r.paidC}</td><td style="color:var(--red)">${r.pendC}</td></tr>`).join('')}
     </table></div>`;
   }
+  else if(type==='accountDetail'){
+    const acctName=filterAcct||'Other';
+    title=`💳 ${acctName} — Tenants Paid${scopeLabel}`;
+    const allTenants=await ga('tenants');
+    const rows=bills.filter(b=>(b.account||'Other')===acctName &&
+        (((parseFloat(b.rentPaid)||0)>0)||((parseFloat(b.waterAmount)||0)>0)||((parseFloat(b.elecAmount)||0)>0)))
+      .sort((a,c)=>(c.paidDate||c.month||'').localeCompare(a.paidDate||a.month||''))
+      .map(b=>{
+        const fl=allFlats.find(f=>f.id===b.flatId);
+        const ten=allTenants.find(t=>t.id===b.tenantId)||allTenants.find(t=>t.flatId===b.flatId&&!t.movedOut);
+        const collected=(parseFloat(b.rentPaid)||0)+(parseFloat(b.waterAmount)||0)+(parseFloat(b.elecAmount)||0);
+        return{tenant:ten?ten.name:'—',flat:fl?`${fl.block}-${fl.flatNo}`:'?',month:b.month||'—',paidDate:b.paidDate||'—',collected,status:b.rentStatus};
+      });
+    const grand=rows.reduce((s,r)=>s+r.collected,0);
+    html=`<div class="srow" style="grid-template-columns:1fr 1fr">
+      <div class="scard"><div class="snum" style="font-size:15px;color:var(--blue)">₹${grand.toLocaleString('en-IN')}</div><div class="slbl">Total Collected</div></div>
+      <div class="scard"><div class="snum" style="color:var(--blue)">${rows.length}</div><div class="slbl">Payments</div></div>
+    </div>
+    <div class="rtable"><table>
+      <tr><th>Tenant</th><th>Flat</th><th>Month</th><th>Paid Date</th><th>Amount</th></tr>
+      ${rows.length?rows.map(r=>`<tr><td>${esc(r.tenant)}</td><td>${esc(r.flat)}</td><td>${r.month}</td><td>${r.paidDate}</td><td><b>₹${r.collected.toLocaleString('en-IN')}</b></td></tr>`).join('')
+        :`<tr><td colspan="5" style="text-align:center;color:var(--gray-400)">No payments found for ${esc(acctName)}</td></tr>`}
+    </table></div>`;
+  }
   else if(type==='accounts'){
     title=`Payment Mode Summary${scopeLabel}`;
     // All-time breakdown
@@ -2330,7 +2354,7 @@ async function showReport(type){
     </div>
     <div class="sh" style="margin-top:4px"><span class="st">All-time Breakdown</span></div>
     ${rows.map(r=>`
-      <div style="background:white;border-radius:10px;padding:11px 13px;margin-bottom:8px;box-shadow:var(--sh)">
+      <div style="background:white;border-radius:10px;padding:11px 13px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer" onclick="showReport('accountDetail','${r.acct.replace(/'/g,"\\'")}')">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div style="font-size:13px;font-weight:800">${esc(r.acct)}</div>
           <div style="font-size:14px;font-weight:900;color:var(--blue)">₹${r.collected.toLocaleString('en-IN')}</div>
@@ -2338,7 +2362,7 @@ async function showReport(type){
         <div class="pbar2" style="margin-top:7px"><div class="pfill2" style="width:${r.pct}%"></div></div>
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--gray-400);margin-top:4px">
           <span>${r.count} transaction${r.count!==1?'s':''} · ${r.months} month${r.months!==1?'s':''}</span>
-          <span>${r.pct}% of total</span>
+          <span>${r.pct}% of total · tap for tenants ›</span>
         </div>
       </div>`).join('')}
     ${allMonths.length>0?`
@@ -6218,8 +6242,11 @@ async function init(){
     const openCount=maint.filter(m=>m.status==='Open'||m.status==='In Progress').length;
     const sub=document.getElementById('maint-badge-sub');
     if(sub&&openCount>0) sub.textContent=`${openCount} open request${openCount!==1?'s':''}`;
-    // Auto-generate billing entries for the current month
-    autoAddCurrentMonth();
+    // Auto-generate billing entries for the current month — disabled.
+    // Was creating "Pending" rows for new tenants before their move-in date
+    // was saved, locking in full (non-prorated) rent. Use the "Add Next
+    // Month" button manually instead (e.g. at month-end).
+    // autoAddCurrentMonth();
   },1500);
 }
 init();
