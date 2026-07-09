@@ -2231,7 +2231,7 @@ function cleanPhone(p,cc){
 // ═══════════════════════════════════════════
 // REPORTS
 // ═══════════════════════════════════════════
-async function showReport(type,filterAcct){
+async function showReport(type,filterAcct,allTime){
   const allFlats=await ga('flats');
   const flats=filterByBuilding(allFlats); // scoped
   const flatIds=buildingFlatIds(allFlats);
@@ -2296,9 +2296,12 @@ async function showReport(type,filterAcct){
   }
   else if(type==='accountDetail'){
     const acctName=filterAcct||'Other';
-    title=`💳 ${acctName} — Tenants Paid${scopeLabel}`;
+    const acctKey=acctName.replace(/'/g,"\\'");
+    const monthFilter=allTime?null:monthKey();
+    title=allTime?`💳 ${acctName} — All Tenants Paid${scopeLabel}`:`💳 ${acctName} — ${monthLabel()}${scopeLabel}`;
     const allTenants=await ga('tenants');
     const rows=bills.filter(b=>(b.account||'Other')===acctName &&
+        (monthFilter?b.month===monthFilter:true) &&
         (((parseFloat(b.rentPaid)||0)>0)||((parseFloat(b.waterAmount)||0)>0)||((parseFloat(b.elecAmount)||0)>0)))
       .sort((a,c)=>(c.paidDate||c.month||'').localeCompare(a.paidDate||a.month||''))
       .map(b=>{
@@ -2308,14 +2311,18 @@ async function showReport(type,filterAcct){
         return{tenant:ten?ten.name:'—',flat:fl?`${fl.block}-${fl.flatNo}`:'?',month:b.month||'—',paidDate:b.paidDate||'—',collected,status:b.rentStatus};
       });
     const grand=rows.reduce((s,r)=>s+r.collected,0);
-    html=`<div class="srow" style="grid-template-columns:1fr 1fr">
+    html=`<div class="sh" style="margin-bottom:8px">
+      <span class="st"></span>
+      <button class="btn btn-sm btn-ghost" style="font-size:11px" onclick="showReport('accountDetail','${acctKey}',${allTime?'false':'true'})">${allTime?`◂ ${monthLabel()} only`:'All time ›'}</button>
+    </div>
+    <div class="srow" style="grid-template-columns:1fr 1fr">
       <div class="scard"><div class="snum" style="font-size:15px;color:var(--blue)">₹${grand.toLocaleString('en-IN')}</div><div class="slbl">Total Collected</div></div>
       <div class="scard"><div class="snum" style="color:var(--blue)">${rows.length}</div><div class="slbl">Payments</div></div>
     </div>
     <div class="rtable"><table>
       <tr><th>Tenant</th><th>Flat</th><th>Month</th><th>Paid Date</th><th>Amount</th></tr>
       ${rows.length?rows.map(r=>`<tr><td>${esc(r.tenant)}</td><td>${esc(r.flat)}</td><td>${r.month}</td><td>${r.paidDate}</td><td><b>₹${r.collected.toLocaleString('en-IN')}</b></td></tr>`).join('')
-        :`<tr><td colspan="5" style="text-align:center;color:var(--gray-400)">No payments found for ${esc(acctName)}</td></tr>`}
+        :`<tr><td colspan="5" style="text-align:center;color:var(--gray-400)">No payments found for ${esc(acctName)}${allTime?'':' in '+monthLabel()}</td></tr>`}
     </table></div>`;
   }
   else if(type==='accounts'){
@@ -2354,7 +2361,7 @@ async function showReport(type,filterAcct){
     </div>
     <div class="sh" style="margin-top:4px"><span class="st">All-time Breakdown</span></div>
     ${rows.map(r=>`
-      <div style="background:white;border-radius:10px;padding:11px 13px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer" onclick="showReport('accountDetail','${r.acct.replace(/'/g,"\\'")}')">
+      <div style="background:white;border-radius:10px;padding:11px 13px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer" onclick="showReport('accountDetail','${r.acct.replace(/'/g,"\\'")}',true)">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div style="font-size:13px;font-weight:800">${esc(r.acct)}</div>
           <div style="font-size:14px;font-weight:900;color:var(--blue)">₹${r.collected.toLocaleString('en-IN')}</div>
