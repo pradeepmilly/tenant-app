@@ -6079,18 +6079,22 @@ async function importDocuments(input){
     let added=0,skipped=0,unmatched=0;
 
     for(const d of incoming){
-      // Try to match tenant by name + flat if tenantId changed across devices
+      // Match tenant by name + block + flat first — tenantId is just a local
+      // auto-increment number, so the same id can belong to a totally
+      // different person on another device/database. Only trust a raw id
+      // match as a last-resort fallback for older exports that don't carry
+      // the _tenantName/_block/_flatNo fields.
       let targetTenantId=null;
-      const localTen=allTenants.find(t=>t.id===d.tenantId);
-      if(localTen){
-        targetTenantId=localTen.id;
-      } else if(d._tenantName){
-        // Fallback: match by tenant name + block + flat
+      if(d._tenantName){
         const matched=allTenants.find(t=>{
           const fl=allFlats.find(f=>f.id===t.flatId);
           return t.name===d._tenantName&&fl?.block===d._block&&fl?.flatNo===d._flatNo;
         });
         if(matched) targetTenantId=matched.id;
+      }
+      if(!targetTenantId){
+        const localTen=allTenants.find(t=>t.id===d.tenantId);
+        if(localTen) targetTenantId=localTen.id;
       }
       if(!targetTenantId){unmatched++;continue;}
 
