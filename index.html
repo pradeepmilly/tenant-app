@@ -2679,9 +2679,12 @@ async function importSettings(input){
 async function exportExcel(){
   toast('⏳ Preparing export…');
   const allFlats=await ga('flats');
-  const flatIds=buildingFlatIds(allFlats);
-  // Export scoped to building if active
-  const flats=filterByBuilding(allFlats);
+  // Full backup — always exports every building's data, regardless of the
+  // active building filter in the UI. (This function backs "Backup Now",
+  // "Export Excel", and Drive Backup — none of those should ever silently
+  // drop data because a filter happened to be on.)
+  const flatIds=new Set(allFlats.map(f=>f.id));
+  const flats=allFlats;
   const allTenants=await ga('tenants');
   const allMoveouts=await ga('moveouts');
   // Exclude vacated tenants from Tenant_DB export (they're already in Vacated_Tenants sheet)
@@ -2715,11 +2718,9 @@ async function exportExcel(){
   const ws3=XLSX.utils.json_to_sheet(bills.map(b=>{const fl=allFlats.find(f=>f.id===b.flatId);const ten=allTenants.find(t=>t.flatId===b.flatId);return{'Month':b.month,'Block':fl?.block||'','Flat':fl?.flatNo||'','Tenant':ten?.name||'','Rent Due':b.rentDue,'Rent Paid':b.rentPaid,'Rent Status':b.rentStatus,'Water Units':b.waterUnits,'Water Rate':b.waterRate,'Water Amt':b.waterAmount,'Water Status':b.waterStatus||'Pending','Elec Units':b.elecUnits,'Elec Amt':b.elecAmount,'Elec Status':b.elecStatus||'Pending','Total Due':b.totalDue||0,'Total':b.total,'Account':b.account||'','Date':b.paidDate||'','Notes':b.notes||''}}));
   XLSX.utils.book_append_sheet(wb,ws3,'Billing');
 
-  // Expenses sheet
+  // Expenses sheet — always full, same reasoning as above
   const allExpRaw=await ga('expenses');
-  const expScope=filterByBuilding(await ga('flats'));
-  const expBldgs=new Set(expScope.map(f=>f.block));
-  const expRows=(activeBuilding==='All'?allExpRaw:allExpRaw.filter(e=>expBldgs.has(e.building)))
+  const expRows=allExpRaw
     .sort((a,b)=>b.month.localeCompare(a.month))
     .map(e=>({'Month':e.month,'Building':e.building,'Category':e.category,'Amount (₹)':e.amount,
       'Paid Date':e.paidDate||'','Account':e.account||'','Vendor':e.vendor||'','Notes':e.notes||''}));
@@ -2755,8 +2756,7 @@ async function exportExcel(){
   wsMo['!cols']=[{wch:10},{wch:8},{wch:20},{wch:14},{wch:22},{wch:8},{wch:12},{wch:12},{wch:12},{wch:18},{wch:14},{wch:14},{wch:14},{wch:12},{wch:22},{wch:10},{wch:10},{wch:10},{wch:10},{wch:14},{wch:10},{wch:20},{wch:20},{wch:12}];
   XLSX.utils.book_append_sheet(wb,wsMo,'Vacated_Tenants');
 
-  const suffix=activeBuilding!=='All'?`_${activeBuilding.replace(/\s+/g,'_')}`:'';
-  XLSX.writeFile(wb,`TMS${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  XLSX.writeFile(wb,`TMS_${new Date().toISOString().split('T')[0]}.xlsx`);
   toast('✅ Excel downloaded!');
 }
 
