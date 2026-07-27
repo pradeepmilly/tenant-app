@@ -1263,13 +1263,13 @@ async function _doSaveTenant(flatId, name){
     data.id=editId;await put('tenants',data);
     auditLog('edit','tenant',editId,{before:prev,after:data});
     const fl=await g('flats',flatId);
-    if(fl&&fl.status!=='Occupied') await put('flats',{...fl,status:'Occupied',updatedAt:new Date().toISOString()});
+    if(fl&&(fl.status!=='Occupied'||parseFloat(fl.rent)!==data.rent)) await put('flats',{...fl,status:'Occupied',rent:data.rent,updatedAt:new Date().toISOString()});
     toast('✅ Tenant updated');
   } else {
     data.createdAt=new Date().toISOString();const tid=await add('tenants',data);
     auditLog('create','tenant',tid,{after:data});
     const fl=await g('flats',flatId);
-    if(fl&&fl.status!=='Occupied'){await put('flats',{...fl,status:'Occupied',updatedAt:new Date().toISOString()});toast('✅ Tenant registered · Flat marked Occupied');}
+    if(fl&&(fl.status!=='Occupied'||parseFloat(fl.rent)!==data.rent)){await put('flats',{...fl,status:'Occupied',rent:data.rent,updatedAt:new Date().toISOString()});toast('✅ Tenant registered · Flat marked Occupied');}
     else toast('✅ Tenant registered');
   }
   closeModal();renderTenants();renderFlats();renderDash();
